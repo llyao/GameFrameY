@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>06 UniTask &amp; VContainer · 异步与 DI 底座 — GameFrameY 模块说明系列</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-page="foundation.html">
+<aside class="sidebar" id="sidebar"></aside>
+<div class="main">
+<main class="content">
+
+<header class="hero">
+  <span class="chapter">CH.06 · 异步与 DI 底座</span>
+  <h1>UniTask &amp; VContainer — 框架的两块地基</h1>
+  <p class="lede">全框架的异步统一返回 <code>UniTask</code>（2.6.2：struct 零分配、PlayerLoop 驱动），依赖注入统一走 <code>VContainer</code>（1.19：LifetimeScope + PlayerLoop EntryPoint）。本章还捎带三个工具包：LitJson（框架默认 JSON）、ReadAssets（StreamingAssets 直读）、Localization（本地化字典）。</p>
+  <div class="hero-facts">
+    <span class="chip acc">UniTask 2.6.2（Cysharp，经 GameFrameX 转发包）</span>
+    <span class="chip acc">VContainer 1.19.0</span>
+    <span class="chip">模块生命周期 / 服务等待 / 资源加载全是 UniTask</span>
+  </div>
+</header>
+
+<h2 id="unitask">1 UniTask：为什么全框架都用它</h2>
+
+<h3>1.1 与 Task / 协程的本质区别</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th></th><th>System.Threading.Tasks.Task</th><th>IEnumerator 协程</th><th>UniTask</th></tr></thead>
+  <tbody>
+    <tr><td>类型</td><td>class，每次 await 有分配</td><td>interface + 装箱迭代器</td><td><strong>readonly struct</strong>（source+token 两个字段），source 走 TaskPool 池化，热路径零分配</td></tr>
+    <tr><td>驱动</td><td>线程池 + SynchronizationContext.Post 回主线程</td><td>MonoBehaviour（物体禁用/销毁即停）</td><td><strong>PlayerLoop 原生时机恢复</strong>（16 档 PlayerLoopTiming），不需要 SyncContext</td></tr>
+    <tr><td>await 次数</td><td>多次</td><td>Start 一次</td><td><strong>一次性</strong>（await 后失效）；要多次 await 先 <code>.Preserve()</code></td></tr>
+    <tr><td>异常</td><td>UnobservedTaskException 兜底</td><td>直接抛到 Unity</td><td>无兜底：显式 <code>Forget()</code> 消费并进 <code>UniTaskScheduler.UnobservedTaskException</code></td></tr>
+    <tr><td>取消/返回值</td><td>支持</td><td>都难</td><td>原生 <code>CancellationToken</code> 链 + 泛型返回 <code>UniTask&lt;T&gt;</code></td></tr>
+  </tbody>
+</table></div>
+
+<h3>1.2 常用 API 速查（全部真实存在于 2.6.2）</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th>分组</th><th>API</th></tr></thead>
+  <tbody>
+    <tr><td>帧/时序</td><td><code>UniTask.Yield(timing) / NextFrame() / WaitForEndOfFrame() / WaitForFixedUpdate() / Delay(ms, ignoreTimeScale, delayTiming) / DelayFrame(n) / WaitForSeconds(s)</code></td></tr>
+    <tr><td>条件</td><td><code>WaitUntil(predicate) / WaitWhile(predicate) / WaitUntilCanceled(ct) / WaitUntilValueChanged(target, monitor)</code></td></tr>
+    <tr><td>组合</td><td><code>WhenAll(params UniTask[]) / WhenAny / Timeout(TimeSpan) / TimeoutWithoutException</code></td></tr>
+    <tr><td>取消</td><td><code>AttachExternalCancellation(ct) / SuppressCancellationThrow() → (bool IsCanceled) / this.GetCancellationTokenOnDestroy() / ct.CancelAfterSlim(ms)</code></td></tr>
+    <tr><td>工厂/桥接</td><td><code>UniTask.CompletedTask / FromResult / FromException / Create / Run(Action)（线程池后回主线程）/ SwitchToMainThread() / SwitchToThreadPool() / task.AsUniTask() / unitask.AsTask() / ToCoroutine()</code></td></tr>
+    <tr><td>事件等待</td><td><code>UniTaskCompletionSource&lt;T&gt;（TrySetResult/Exception/Canceled + Reset）/ button.onClick.AsAsyncEnumerable() / GetAsyncDestroyTrigger()</code></td></tr>
+    <tr><td>fire-and-forget</td><td><code>UniTaskVoid + Forget() / UniTask.Void(Func&lt;UniTaskVoid&gt;) / UniTask.Action / UniTask.UnityAction</code></td></tr>
+    <tr><td>调试</td><td>Window → UniTask Tracker（活跃任务/状态/创建时间/堆栈，Editor 开关）</td></tr>
+  </tbody>
+</table></div>
+
+<div class="callout warn">
+  <div class="callout-title">两个高频坑</div>
+  <ul style="margin:4px 0 0">
+    <li><strong>async void 别用</strong>——异常会直接打崩；事件回调里用 <code>async UniTaskVoid F() + Forget()</code>。本仓库 <code>GameFrameYProcedure.RunFlow</code> 就是标准示范（UniTask.Void + try/catch）。</li>
+    <li>同一段逻辑里 <code>await UniTask.Delay(...)</code> 与 <code>UniTask.Yield()</code> 的恢复时机由 <code>PlayerLoopTiming</code> 决定（默认 Update），与 MonoBehaviour 的 Update 相对顺序是确定的——见下面的时机图。</li>
+  </ul>
+</div>
+
+<div class="demo">
+  <div class="demo-header"><span class="demo-tag">INTERACTIVE</span>PlayerLoop 时机图：await 在哪一帧哪个区段恢复</div>
+  <div class="demo-body">
+    <div class="demo-controls">
+      <select id="pl-select" style="padding:6px 10px;border:1px solid var(--border-strong);border-radius:7px;background:var(--bg);color:var(--text);font-size:13px"></select>
+      <span id="pl-desc" style="font-size:12.5px;color:var(--text-soft)"></span>
+    </div>
+    <div id="pl-loop" style="display:flex;flex-direction:column;gap:4px"></div>
+  </div>
+</div>
+
+<h3>1.3 本仓库的真实用法</h3>
+<pre class="codeblock"><code data-lang="cs">// GameFrameYGameLauncher：等待组件就绪（带取消令牌）
+await UniTask.WaitUntil(IsGameFrameXReady, cancellationToken: cancellation);
+
+// ServiceRegistry.WaitServiceAsync：事件驱动等待 + 取消注册
+var completion = new UniTaskCompletionSource&lt;TService&gt;();
+cancellationToken.Register(() =&gt; completion.TryCanceled());
+
+// ProcedurePatch：两帧防御（等 GameFrameX 组件自身 Start 完成）
+await UniTask.DelayFrame(2);
+
+// GameFrameYProcedure：安全的 fire-and-forget
+UniTask.Void(async () =&gt; { try { await flow(); } catch (Exception e) { GfyLog.Error(...); } });
+
+// DemoModule：心跳节流用 unscaled 时间
+_tickTimer += realElapseSeconds;   // ITickableModule.OnTick(dt, realDt) 的第二个参数</code></pre>
+<p>VContainer 联动：工程启用了 <code>VCONTAINER_UNITASK_INTEGRATION</code>（VContainer asmdef versionDefines 提供），因此 <code>IAsyncStartable.StartAsync</code> 的 Awaitable 即 <code>UniTask</code>——<code>GameFrameYGameLauncher</code> 直接以 <code>UniTask StartAsync(...)</code> 实现接口。</p>
+
+<h2 id="vcontainer">2 VContainer：DI 脊柱</h2>
+
+<h3>2.1 核心概念与注册 API</h3>
+<pre class="codeblock"><code data-lang="cs">// 作用域（MonoBehaviour；本项目全部代码创建，不用场景 prefab）
+LifetimeScope.Create(new GameFrameYRootInstaller(), "GameFrameY Root");   // 静态工厂建根
+scope.CreateChild(installer, "GameFrameY.Module.Asset");                  // 子作用域（Build 时注册 LifetimeScope 自身）
+
+// 注册（IContainerBuilder）
+builder.Register&lt;IServiceRegistry&gt;(r =&gt; new ServiceRegistry(r), Lifetime.Singleton);
+builder.Register&lt;IAssetService&gt;(_ =&gt; new AssetService(), Lifetime.Singleton);   // 接口→实现
+builder.RegisterInstance(new GameFrameYLaunchSettings());                        // 已有实例
+builder.RegisterEntryPoint&lt;GameModuleManager&gt;(Lifetime.Singleton);               // EntryPoint（自动 AsImplementedInterfaces）
+// 流式：.As&lt;T&gt;() / AsImplementedInterfaces() / Keyed(obj) / WithParameter(name, value)
+
+// 解析（IObjectResolver）
+resolver.Resolve&lt;T&gt;();            // 找不到抛 VContainerException
+resolver.TryResolve&lt;T&gt;(out var t); // 沿 Parent 链向上找，失败返回 false
+resolver.ResolveOrDefault&lt;T&gt;(default);
+resolver.Inject(instance);         // 对已存在对象补属性/方法注入</code></pre>
+<p>Lifetime 语义：<code>Transient</code>（每次新建）/<code>Singleton</code>（本作用域注册表没有则上抛 Parent 解析，最终根容器共享）/<code>Scoped</code>（本作用域缓存 + Dispose 链）。注入方式：构造函数（最多一个 [Inject] 构造）+ <code>[Inject]</code> 属性/字段/方法；构建期做循环依赖检查。诊断窗口：VContainer Diagnostics（EnableDiagnostics）。</p>
+
+<div class="demo">
+  <div class="demo-header"><span class="demo-tag">SIMULATOR</span>子作用域解析：沿链向上查找</div>
+  <div class="demo-body">
+    <p style="font-size:13px;color:var(--text-soft);margin-top:0">真实的模块作用域链。选一个"发起解析的位置 + 目标类型"，看查找如何沿链上溯：</p>
+    <div class="demo-controls">
+      <select id="vc-from" style="padding:6px 10px;border:1px solid var(--border-strong);border-radius:7px;background:var(--bg);color:var(--text);font-size:13px">
+        <option value="7">Demo 模块作用域</option>
+        <option value="4">UI 模块作用域</option>
+        <option value="0">根作用域</option>
+      </select>
+      <select id="vc-what" style="padding:6px 10px;border:1px solid var(--border-strong);border-radius:7px;background:var(--bg);color:var(--text);font-size:13px">
+        <option value="IAssetService">IAssetService（Asset 模块 Installer 注册）</option>
+        <option value="IServiceRegistry">IServiceRegistry（根注册）</option>
+        <option value="IShopService">IShopService（谁都没注册）</option>
+      </select>
+      <button class="btn sm primary" id="vc-run">▶ 解析</button>
+      <button class="btn sm" id="vc-reset">↺ 重置</button>
+    </div>
+    <div id="vc-chain" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0"></div>
+    <div class="demo-log" id="vc-log"></div>
+  </div>
+</div>
+
+<h3>2.2 EntryPoint：容器驱动的生命周期</h3>
+<p><code>RegisterEntryPoint</code> 会注册 <code>EntryPointDispatcher</code> 并挂 Build 回调——<strong>容器 Build 完成的那一刻同步 Dispatch</strong>：</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>接口</th><th>方法</th><th>执行时机</th></tr></thead>
+  <tbody>
+    <tr><td><code>IInitializable / IPostInitializable</code></td><td><code>Initialize() / PostInitialize()</code></td><td>Build 回调内同步执行（先于一切帧）</td></tr>
+    <tr><td><code>IStartable / IPostStartable</code></td><td><code>Start() / PostStart()</code></td><td>PlayerLoopTiming.Startup（EarlyUpdate，一次性；早于 MonoBehaviour.Start）</td></tr>
+    <tr><td><code>IAsyncStartable</code></td><td><code>UniTask StartAsync(CancellationToken)</code></td><td>Startup 时机 fire-and-forget；异常经 EntryPointExceptionHandler 发布</td></tr>
+    <tr><td><code>ITickable / IPostTickable</code></td><td><code>Tick() / PostTick()</code></td><td>Update / PostUpdate（每帧）</td></tr>
+    <tr><td><code>IFixedTickable / IPostFixedTickable</code></td><td><code>FixedTick()</code></td><td>FixedUpdate / PostFixedUpdate</td></tr>
+    <tr><td><code>ILateTickable / IPostLateTickable</code></td><td><code>LateTick()</code></td><td>PreLateUpdate / PostLateUpdate</td></tr>
+  </tbody>
+</table></div>
+<p class="table-note">本项目：GameModuleManager 实现三个 Tickable（模块 Tick 泵）；GameFrameYGameLauncher 实现 IAsyncStartable（启动编排）。</p>
+<p>VContainer 向 Unity 原生 PlayerLoop 的 Initialization / EarlyUpdate / FixedUpdate / Update / PreLateUpdate 五个区段各插入一对子系统（一次性项 MoveNext 返回 false 后自动出队）。场景 <code>LifetimeScope</code> 的父子解析优先级：Inspector 引用 → 子类 FindParent 覆写 → 场景按类型查找 → <code>EnqueueParent</code> 全局覆盖 → VContainerSettings 根作用域。本项目没用 VContainerSettings——根作用域全部代码创建。</p>
+
+<h2 id="litjson">3 LitJson（框架默认 JSON）</h2>
+<pre class="codeblock"><code data-lang="cs">string json = JsonMapper.ToJson(obj, prettyPrint: false);
+T obj = JsonMapper.ToObject&lt;T&gt;(json);
+JsonMapper.RegisterExporter&lt;Vector2&gt;(v =&gt; writer.Write($"{v.x},{v.y}"));   // 自定义导出
+// 特性：[JsonProperty("name")] 字段改名、[JsonIgnore]</code></pre>
+<p>改进点（GameFrameX 版 1.2.4）：float 单独处理、<code>JsonData</code> 动态访问、<code>UnityTypeBindings</code> 内建 Unity 类型双向转换。在本项目中的角色：<code>BaseComponent</code> 反射装配 <code>LitJsonHelper</code> 为 <code>Utility.Json</code> 默认实现（Setting 的对象存取、编辑器 asmdef/manifest 读写都走它）；自研层不直接调用。</p>
+
+<h2 id="readassets">4 ReadAssets（StreamingAssets 直读）</h2>
+<pre class="codeblock"><code data-lang="cs">BlankReadAssets.Initialize();                       // 首次调用任意 API 自动触发
+bool exists = BlankReadAssets.FileExists("version.txt");   // 相对 StreamingAssets 的路径
+string text = BlankReadAssets.ReadAllText("version.txt");
+byte[] bytes = BlankReadAssets.ReadAllBytes("data.bin");
+Stream s = BlankReadAssets.OpenRead("data.bin");
+var abReq = BlankReadAssets.LoadAssetBundleAsync("ui.bundle", crc);</code></pre>
+<p>平台实现编译期三选一：<strong>Editor</strong>（可切 ApkMode 模拟真机）/ <strong>Android</strong>（解析 APK zip 中央目录，记录每条目的 size/offset/crc32，未压缩 AB 用 offset 直读 <code>AssetBundle.LoadFromFile(path, crc, offset)</code>）/ <strong>其他平台</strong>（普通文件系统）。消费方：GameFrameX <code>FileHelper</code> 的底层；自研层走 YooAsset 不直读。</p>
+
+<h2 id="localization">5 Localization（本地化字典）</h2>
+<pre class="codeblock"><code data-lang="cs">var loc = GameEntry.GetComponent&lt;LocalizationComponent&gt;();
+loc.Language = LocalizationCode.ChineseSimplified;   // "zh_CN"；写入 Setting 持久化 + 广播三段事件
+string s = loc.GetString("UI.OK");                  // 无参
+string s2 = loc.GetString("UI.Welcome", player.Name, level);  // 17 个强类型重载（最多 16 参，无装箱）
+bool has = loc.HasRawString("UI.OK");
+bool added = loc.AddRawString("UI.OK", "确定");     // 字典注入入口（本版本不经组件加载字典文件）</code></pre>
+<p>机制要点：语言码用 .NET CultureInfo 风格（<code>zh_CN / en_US</code>，DefaultLocalizationHelper 把 <code>-</code> 换 <code>_</code>）；切换语言时依次 Fire <strong>Before / On / After</strong> 三个事件（带 old/new）；<code>UIForm</code> 基类订阅语言切换事件自动调 <code>UpdateLocalization()</code> 刷新界面文本。启动配置 <code>LocalizationOptions</code>：DefaultLanguage/EditorLanguage = "zh_CN"、IsEnableEditorMode = false。</p>
+
+<footer class="pagenav"></footer>
+</main>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+/* ================= PlayerLoop 时机图 ================= */
+(function initPl() {
+  var ZONES = [
+    { name: "Initialization", note: "UniTask.Yield(Initialization) 等" },
+    { name: "EarlyUpdate", note: "★ VContainer Startup / PostStartup 插入点（早于 MonoBehaviour.Start）；UniTask.Yield(EarlyUpdate)" },
+    { name: "FixedUpdate", note: "UniTask.WaitForFixedUpdate() / Yield(FixedUpdate)；VContainer FixedTick" },
+    { name: "Update", note: "★ UniTask 默认恢复点：Delay / DelayFrame / WaitUntil / Yield(Update)；VContainer Tick" },
+    { name: "PreLateUpdate", note: "VContainer LateTick；UniTask.Yield(PreLateUpdate)" },
+    { name: "PostLateUpdate", note: "UniTask.WaitForEndOfFrame 接近此处之后；Yield(PostLateUpdate)" },
+    { name: "TimeUpdate", note: "帧末尾：UniTask.Yield(TimeUpdate / LastTimeUpdate)" }
+  ];
+  var TIMINGS = [
+    ["UniTask.Delay(ms)（默认）", 3, "毫秒计时到期后，在 Update 区段恢复"],
+    ["UniTask.DelayFrame(n)（默认）", 3, "n 帧后的 Update 区段"],
+    ["UniTask.Yield()（默认）", 3, "下一帧 Update"],
+    ["UniTask.NextFrame()", 3, "下一帧 Update"],
+    ["UniTask.WaitForFixedUpdate()", 2, "下一个物理帧"],
+    ["UniTask.WaitForEndOfFrame()", 5, "渲染之后、帧呈现之前"],
+    ["UniTask.WaitUntil(pred)（默认）", 3, "谓词为真的那一帧 Update"],
+    ["VContainer IStartable.Start()", 1, "EarlyUpdate 的 VContainerStartup 子系统，早于脚本 Start()"],
+    ["VContainer ITickable.Tick()", 3, "每帧 Update 区段（GameModuleManager 泵）"],
+    ["VContainer IFixedTickable.FixedTick()", 2, "每物理帧"],
+    ["VContainer ILateTickable.LateTick()", 4, "PreLateUpdate 区段"]
+  ];
+  var select = $("#pl-select"), desc = $("#pl-desc"), loop = $("#pl-loop");
+  var zoneNodes = ZONES.map(function (z, i) {
+    var bar = el("div", { style: "display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;transition:all .2s" }, [
+      el("span", { class: "badge b-gray", text: String(i + 1) }),
+      el("span", { style: "font-family:var(--mono);font-size:12.5px;font-weight:700;width:120px;flex:none", text: z.name }),
+      el("span", { style: "font-size:12px;color:var(--text-faint)", text: z.note })
+    ]);
+    loop.appendChild(bar);
+    return bar;
+  });
+  TIMINGS.forEach(function (t, i) {
+    select.appendChild(el("option", { value: String(i), text: t[0] }));
+  });
+  select.addEventListener("change", function () {
+    var t = TIMINGS[parseInt(this.value, 10)];
+    zoneNodes.forEach(function (n, k) {
+      var hit = k === t[1];
+      n.style.borderColor = hit ? "var(--accent)" : "var(--border)";
+      n.style.background = hit ? "var(--accent-soft)" : "transparent";
+      n.style.transform = hit ? "translateX(6px)" : "";
+    });
+    desc.innerHTML = "<strong style='color:var(--accent)'>" + esc(t[0]) + "</strong> → " + esc(t[2]) + "（高亮第 " + (t[1] + 1) + " 区段）";
+  });
+  select.value = "0"; select.dispatchEvent(new Event("change"));
+})();
+
+/* ================= VContainer 作用域链解析 ================= */
+(function initVc() {
+  var CHAIN = [
+    ["Root", "IServiceRegistry, GameFrameYLaunchSettings"],
+    ["Asset", "IAssetService"],
+    ["Config", "IConfigService"],
+    ["Network", "INetworkService"],
+    ["UI", "IUIService"],
+    ["Scene", "ISceneService"],
+    ["Event", "IEventService"],
+    ["Demo", "IDemoGreetingService(中央表,非容器)"]
+  ];
+  var LOC = { IAssetService: 1, IServiceRegistry: 0, IShopService: -1 };
+  var chainBox = $("#vc-chain"), log = $("#vc-log");
+  var nodes = CHAIN.map(function (c) {
+    var box = el("div", { style: "border:1px solid var(--border);border-radius:8px;padding:8px 12px;text-align:center;transition:all .2s;min-width:96px" }, [
+      el("div", { style: "font-family:var(--mono);font-weight:700;font-size:12.5px", text: c[0] }),
+      el("div", { style: "font-size:10.5px;color:var(--text-faint);margin-top:3px", text: c[1] })
+    ]);
+    chainBox.appendChild(box);
+    if (c[0] !== "Demo") chainBox.appendChild(el("span", { style: "align-self:center;color:var(--text-faint)", text: "→" }));
+    return box;
+  });
+  function reset() {
+    nodes.forEach(function (n) { n.style.borderColor = "var(--border)"; n.style.background = "transparent"; n.style.transform = ""; });
+  }
+  $("#vc-run").addEventListener("click", function () {
+    reset();
+    var from = parseInt($("#vc-from").value, 10);
+    var what = $("#vc-what").value;
+    var loc = LOC[what];
+    dlog(log, "acc", "在【" + CHAIN[from][0] + "】作用域 Resolve<" + what + ">()");
+    if (loc > from) {
+      dlog(log, "err", "✗ VContainerException: No such registration —— 子作用域只能向上解析，" + what + " 注册在更晚的【" + CHAIN[loc][0] + "】作用域（Demo 想注入 UI 服务？把 \"UI\" 加进 Dependencies 让它先装）");
+      nodes[from].style.borderColor = "var(--danger)";
+      return;
+    }
+    var i = from, timer = setInterval(function () {
+      if (i < 0 || i === loc) {
+        clearInterval(timer);
+        if (loc < 0) {
+          dlog(log, "err", "✗ 沿链查到根也未找到：" + what + " —— 检查模块是否装配 / Installer 是否注册 / 中央服务注册表");
+          nodes[0].style.borderColor = "var(--danger)";
+        } else {
+          nodes[loc].style.borderColor = "var(--ok)"; nodes[loc].style.background = "rgba(22,163,74,.1)";
+          dlog(log, "ok", "✓ 在【" + CHAIN[loc][0] + "】作用域命中 " + what + "，单例返回（Singleton 沿链共享）");
+        }
+        return;
+      }
+      nodes[i].style.borderColor = "var(--accent)";
+      dlog(log, "info", "【" + CHAIN[i][0] + "】作用域注册表：未注册 " + what + " → 上抛 Parent");
+      i--;
+    }, 520);
+  });
+  $("#vc-reset").addEventListener("click", function () { reset(); log.innerHTML = ""; });
+  dlog(log, "info", "试试「Demo 解析 IAssetService」（命中 Asset）和「UI 解析 IShopService」（失败示范）");
+})();
+</script>
+</body>
+</html>

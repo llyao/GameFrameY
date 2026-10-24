@@ -36,3 +36,15 @@ MonoBehaviour:
         FilterRuleName: CollectAll
         AssetTags:
         UserData:
+    - GroupName: Atlases
+      GroupDesc: 程序生成图集（消消乐宝石/格子）
+      AssetTags:
+      ActiveRuleName: EnableGroup
+      Collectors:
+      - CollectPath: Assets/Bundles/Atlases
+        CollectorGUID: 3262bc6efe044b6dbeefb2120b252b11
+        AddressRuleName: AddressByFileName
+        PackRuleName: PackDirectory
+        FilterRuleName: CollectAll
+        AssetTags:
+        UserData:

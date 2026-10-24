@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>08 GameFrameX.Server · 服务端概览 — GameFrameY 模块说明系列</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-page="server.html">
+<aside class="sidebar" id="sidebar"></aside>
+<div class="main">
+<main class="content">
+
+<header class="hero">
+  <span class="chapter">CH.08 · 服务端</span>
+  <h1>GameFrameX.Server — 服务端概览</h1>
+  <p class="lede"><code>Server/</code> 是 GameFrameX.Server 的快照（.NET 10，Apache-2.0，来源见 <code>Server/PROVENANCE.md</code>）：Actor 模型（TPL DataFlow）+ SuperSocket 多协议 + MongoDB 持久化 + <strong>状态-组件-代理三层</strong>与零停机热更新。本仓库的唯一增量是 <code>Server/Config/</code>（Luban 生成的我们自己的配置库）。</p>
+  <div class="hero-facts">
+    <span class="chip acc">.NET 10 · C#</span>
+    <span class="chip acc">MongoDB · SuperSocket · protobuf-net</span>
+    <span class="chip">Roslyn 分析器强制分层（GFX0001~14）</span>
+  </div>
+</header>
+
+<h2 id="sca">1 核心模式：状态-组件-代理（State-Component-Agent）</h2>
+<p>整个服务端的设计核心。点击三层中的每一层看职责：</p>
+
+<div class="demo">
+  <div class="demo-header"><span class="demo-tag">INTERACTIVE</span>三层架构 · 点击查看</div>
+  <div class="demo-body">
+    <div class="layer-stack" id="sca-stack"></div>
+    <div class="info-panel" id="sca-info" style="margin-top:12px"><div class="ip-title">👆 点击任意层</div></div>
+  </div>
+</div>
+
+<p>Agent 方法的调度行为由特性标注控制——这是 Actor 串行化的关键：</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>特性</th><th>调度行为</th></tr></thead>
+  <tbody>
+    <tr><td><code>[Service]</code>（默认）</td><td>进入该 Agent 的 Actor 消息队列<strong>串行执行</strong>（TPL DataFlow 无锁排队，天然免锁）</td></tr>
+    <tr><td><code>[ThreadSafe]</code></td><td>跳过队列直接调用（方法自身保证线程安全时用）</td></tr>
+    <tr><td><code>[Discard]</code></td><td>即发即弃（不等待结果）</td></tr>
+    <tr><td><code>[TimeOut(ms)]</code></td><td>方法级超时</td></tr>
+  </tbody>
+</table></div>
+<p class="table-note">Roslyn 源码生成器自动生成 Agent 的 Actor 消息队列调度代码（GameFrameX.Hotfix.WrapperGenerator）；Architecture.Analyzers 在编译期强制：State/Component 定义在 Apps 层、Handler/EventListener/ComponentAgent 定义在 Hotfix 层、命名后缀约定、Handler 必须 sealed（GFX0001~GFX0014）。</p>
+
+<h2 id="sln">2 解决方案结构（7 个项目 + 我们的增量）</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>项目</th><th>类型</th><th>职责</th></tr></thead>
+  <tbody>
+    <tr><td><code>GameFrameX.Launcher</code></td><td>Exe（net10.0）</td><td>入口：<code>Program.cs</code> 注册状态类型与协议消息 → <code>AppStartUpGame</code> 启动流程（ActorLimit → GameDb(MongoDbService) → ComponentRegister → HotfixManager 加载热更程序集 → 主循环）。Debug 输出 <code>bin/app_debug</code></td></tr>
+    <tr><td><code>GameFrameX.Apps</code></td><td>classlib</td><td><strong>状态层（不可热更）</strong>：ActorType、Account/Player(Player/Bag/Pet)/Server/Common 的 State + Component</td></tr>
+    <tr><td><code>GameFrameX.Hotfix</code></td><td>classlib</td><td><strong>热更层（可运行时替换）</strong>：各组件代理（ComponentAgent）、Http/Player/Account/Server Handler、StartUp 流程</td></tr>
+    <tr><td><code>GameFrameX.Hotfix.Tests</code></td><td>xUnit</td><td>Hotfix 单元测试</td></tr>
+    <tr><td><code>GameFrameX.Config</code></td><td>classlib</td><td><strong>上游自带</strong>的配置系统：ConfigComponent + JSON 热加载（本地化/成就/物品/音效）</td></tr>
+    <tr><td><code>GameFrameX.Proto</code></td><td>classlib</td><td>上游协议定义（Basic_10 / Bag_100 / User_300 等）</td></tr>
+    <tr><td><code>GameFrameX.Architecture.Analyzers</code></td><td>netstandard2.0 分析器</td><td>编译期分层规则</td></tr>
+    <tr><td><span class="badge b-teal">本仓新增</span> <code>Server/Config/</code></td><td>classlib</td><td><code>GameFrameY.Config</code>（namespace GameFrameY.Config）：Luban 生成四表（含仅服务端的 TbRobotName）+ bytes（CopyToOutputDirectory）+ 手抄最小 LubanRuntime。<strong>未加入 Server.sln</strong>，独立可编译，随时可被 Launcher 引用</td></tr>
+  </tbody>
+</table></div>
+<div class="callout info">
+  <div class="callout-title">两套配置系统并存（别混淆）</div>
+  <p><code>Server/GameFrameX.Config/</code> 是上游快照的一部分（JSON 热加载）；<code>Server/Config/</code> 是我们的 Luban 产物（与客户端同一份 <code>Config/</code> 定义生成，见 07 章）。前者随上游同步，后者由 <code>gen-server.*</code> 再生。</p>
+</div>
+
+<h2 id="hotfix">3 零停机热更新</h2>
+<pre class="codeblock"><code data-lang="bash"># Hotfix 程序集发布到 hotfix/ 目录，由 HotfixManager 加载
+# 运行时替换业务程序集（状态留在 Apps 层不受影响）：
+curl "http://localhost:28080/game/api/Reload?version=1.0.1"</code></pre>
+<p>原理：State（持久化数据）在 Apps 层不动，业务逻辑（Agent/Handler）在 Hotfix 层整体替换；Docker 部署时 <code>hotfix/</code> 与 <code>json/</code> 是挂载卷（entrypoint.sh 在目录为空时拷入默认产物，见 Server/Dockerfile 多阶段构建）。</p>
+
+<h2 id="run">4 启动与部署</h2>
+<pre class="codeblock"><code data-lang="bash"># 方式一：本地开发（根目录 compose 只起 MongoDB）
+docker compose up -d
+cd Server
+dotnet run --project GameFrameX.Launcher
+
+# 方式二：整套容器化（Server/docker-compose.yml：mongo + 完整服务器）
+cd Server && docker compose up -d --build</code></pre>
+<div class="grid cols-4" style="grid-template-columns:repeat(4,1fr);gap:10px">
+  <div class="card" style="padding:14px;text-align:center"><div style="font-size:11px;color:var(--text-faint);font-weight:700">TCP（InnerPort）</div><div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--accent)">29100</div><div style="font-size:11px;color:var(--text-faint)">客户端连接</div></div>
+  <div class="card" style="padding:14px;text-align:center"><div style="font-size:11px;color:var(--text-faint);font-weight:700">HTTP</div><div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--accent)">28080</div><div style="font-size:11px;color:var(--text-faint)">/game/api/* · Reload</div></div>
+  <div class="card" style="padding:14px;text-align:center"><div style="font-size:11px;color:var(--text-faint);font-weight:700">WebSocket</div><div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--accent)">29110</div><div style="font-size:11px;color:var(--text-faint)">WsPort</div></div>
+  <div class="card" style="padding:14px;text-align:center"><div style="font-size:11px;color:var(--text-faint);font-weight:700">Metrics/APM</div><div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--accent)">29090</div><div style="font-size:11px;color:var(--text-faint)">/health · /metrics</div></div>
+</div>
+<ul>
+  <li>验证端点：<code>http://localhost:29090/health</code>（健康检查）、<code>/metrics</code>（Prometheus）、<code>http://localhost:28080/game/api/test</code>（HTTP 测试接口）。</li>
+  <li>模块分片：<code>MinModuleId=10 / MaxModuleId=9999</code>（消息 ID = <code>(moduleId &lt;&lt; 16) + seqId</code>，见 05 章）。</li>
+  <li>两份 compose 的分工：根目录面向"本地起依赖 + IDE/命令行跑 Launcher"（mongo:7、无认证、命名卷）；<code>Server/docker-compose.yml</code> 面向整套容器化部署（admin/admin 认证、全套环境变量、热更卷挂载）。<strong>两者都占 27017，不要同时 up。</strong></li>
+</ul>
+
+<h2 id="client">5 与客户端的对接面</h2>
+<pre class="codeblock"><code data-lang="text">客户端（05 章 Network）                        服务端
+INetworkChannel.Connect(uri)  ──TCP 29100──►  SuperSocket 多协议（TCP/WS）
+INetworkChannelHelper（protobuf 序列化）       内置编解码 + 压缩
+[MessageHandler] 特性分发        ◄──推送──    Handler/Agent（Hotfix 层）
+
+配置约定同源：
+  TbServerList（07 章）预置 127.0.0.1:29100 = "本地开发服"（Normal）
+  Protobuf/proto/module_demo.proto = demo 模块（HeartbeatReq/Resp、LoginReq/Resp、NoticeNotify）</code></pre>
+<p>监控与可观测：OpenTelemetry + Prometheus；对象映射 Mapster；雪花 ID、存盘批量策略等均由 <code>AppSetting</code> 环境变量控制（Server/docker-compose.yml 内有逐项中文注释）。</p>
+
+<h2 id="sync">6 与上游同步</h2>
+<pre class="codeblock"><code data-lang="bash"># PROVENANCE.md 记录的快照来源：commit 638bd527（2026-10-10 main）
+cd Server
+git remote add upstream https://github.com/GameFrameX/GameFrameX.Server.git
+git fetch upstream && git diff HEAD upstream/main   # 评估差异
+# 本仓改动只有新增 Server/Config/ —— 后续优化建议以 patch 方式进行，便于同步</code></pre>
+
+<footer class="pagenav"></footer>
+</main>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+/* ================= SCA 三层 ================= */
+(function initSca() {
+  var LAYERS = [
+    { name: "State（状态）", where: "Apps 层 · 不可热更 · 持久化", color: "#0ea5e9",
+      detail: "CacheState 子类，只放数据（如 PlayerState 的等级/背包）。经 MongoDB 透明 ORM（CacheState → MongoDbService）读写；因为不随热更变化，热替换业务程序集时数据安全。" },
+    { name: "Component（组件外壳）", where: "Apps 层 · 不可热更 · 生命周期", color: "#f59e0b",
+      detail: "StateComponent&lt;TState&gt;：包裹一个 State 并管理其生命周期与 Actor 身份（ActorType 枚举区分 Account/Player/…）。组件在 Apps 程序集里注册（ComponentRegister.Init）。" },
+    { name: "ComponentAgent（代理）", where: "Hotfix 层 · 可热更 · 业务逻辑", color: "#10b981",
+      detail: "StateComponentAgent&lt;TComponent, TState&gt;：真正的业务方法写在这里，方法上的 [Service]/[ThreadSafe]/[Discard]/[TimeOut] 决定调度方式。热更 = 整体替换这一层的程序集（HTTP /game/api/Reload）。" }
+  ];
+  var stack = $("#sca-stack"), info = $("#sca-info");
+  LAYERS.forEach(function (l, i) {
+    stack.appendChild(el("div", { class: "layer-row" }, [
+      el("div", { class: "layer-label", style: "cursor:pointer;border-color:" + l.color, onclick: function () {
+        info.innerHTML = '<div class="ip-title"><span class="mono" style="color:' + l.color + '">' + esc(l.name) + "</span></div>" +
+          "<p><strong>" + esc(l.where) + "</strong></p><p>" + esc(l.detail) + "</p>" +
+          (i < 2 ? "<p style='color:var(--text-faint);font-size:12.5px'>↓ 下一层持有并调用它</p>" : "");
+      }}, [
+        el("div", { text: l.name, style: "color:" + l.color }),
+        el("small", { text: l.where })
+      ])
+    ]));
+  });
+})();
+</script>
+</body>
+</html>

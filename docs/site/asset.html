@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>03 Asset &amp; YooAsset · 资源管理 — GameFrameY 模块说明系列</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-page="asset.html">
+<aside class="sidebar" id="sidebar"></aside>
+<div class="main">
+<main class="content">
+
+<header class="hero">
+  <span class="chapter">CH.03 · 资源管理</span>
+  <h1>Asset &amp; YooAsset — 资源管线</h1>
+  <p class="lede">资源链路是三层封装：业务代码注入 <code>IAssetService</code>（自研桥接）→ <code>AssetComponent / AssetManager</code>（GameFrameX asset 5.0，门面 + 补丁状态机）→ <code>YooAsset 3.2.0</code>（ResourcePackage / 文件系统 / 句柄引用计数）。本章讲清每一层的 API 与语义，重点是<strong>句柄生命周期</strong>——资源泄漏基本都出在这。</p>
+  <div class="hero-facts">
+    <span class="chip acc">com.gameframex.unity.asset 5.0.0</span>
+    <span class="chip acc">com.gameframex.unity.tuyoogame.yooasset 3.2.0 (fork)</span>
+    <span class="chip">默认包名：DefaultPackage</span>
+  </div>
+</header>
+
+<h2 id="chain">1 调用链全景</h2>
+<pre class="codeblock"><code data-lang="text">业务模块（DemoModule / ConfigService / UIManager…）
+   │  注入 IAssetService（GameFrameY 桥接，Bootstrap 模块 "Asset" 注册）
+   ▼
+AssetComponent（[GameFrameXAutoComponent(-4000)]，挂在 [GameFrameX] 宿主上）
+   │  AssetManager（模块实现：包管理 + 加载转发 + 补丁状态机）
+   ▼
+YooAssets 静态门面 → ResourcePackage("DefaultPackage")
+   │  文件系统（按 PlayMode：Editor / Buildin / Cache / Web）→ AssetBundle
+   ▼
+Handle 族（AssetHandle / SceneHandle / AllAssetsHandle / SubAssetsHandle / RawFileHandle）</code></pre>
+
+<h2 id="api">2 两层 API 速查</h2>
+
+<h3>2.1 自研桥接：IAssetService</h3>
+<pre class="codeblock"><code data-lang="cs">public interface IAssetService
+{
+    // EditorSimulate 下直接返回 true（组件启动时已按 AssetOptions 自管理初始化，跳过避免重复）
+    UniTask&lt;bool&gt; InitializeAsync(EPlayMode playMode, string hostUrl = null, string fallbackHostUrl = null);
+    UniTask&lt;AssetHandle&gt; LoadAssetAsync&lt;T&gt;(string location) where T : UnityEngine.Object;
+    AssetHandle LoadAssetSync(string location);
+    void ReleaseHandle(object handle);   // 只对 YooAsset.AssetHandle 生效：引用计数减一
+}</code></pre>
+<div class="code-caption">Runtime/Bridge/Asset/AssetService.cs — PlayMode 实际由 GameFrameYStartup.ConfigureGameFrameXOptions 决定（发生在容器构建前）</div>
+
+<h3>2.2 AssetComponent（GameFrameX 门面）核心 API</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th>分组</th><th>API</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td rowspan="2">初始化</td><td><code>Task&lt;bool&gt; InitPackageAsync(string packageName, string host, string fallbackHost, bool isDefaultPackage = false)</code></td><td>见 §3 流程拆解</td></tr>
+    <tr><td><code>EPlayMode GamePlayMode / const string BuildInPackageName = "DefaultPackage"</code></td><td>播放模式与默认包名</td></tr>
+    <tr><td rowspan="4">加载</td><td><code>Task&lt;AssetHandle&gt; LoadAssetAsync&lt;T&gt;(string path)</code>（另有 <code>(path, Type)</code> / <code>(AssetInfo)</code> 重载与 <code>LoadAssetSync</code> 族）</td><td>泛型/非泛型/AssetInfo 三套</td></tr>
+    <tr><td><code>Task&lt;AllAssetsHandle&gt; LoadAllAssetsAsync&lt;T&gt;(string path)</code></td><td>某 bundle 内全部对象</td></tr>
+    <tr><td><code>Task&lt;SubAssetsHandle&gt; LoadSubAssetsAsync… / Task&lt;RawFileHandle&gt; LoadRawFileAsync(string path)</code></td><td>子资源 / 原始文件</td></tr>
+    <tr><td><code>Task&lt;SceneHandle&gt; LoadSceneAsync(string path, LoadSceneMode, bool activateOnLoad = true)</code></td><td>场景走 SceneComponent 更方便（04 章）</td></tr>
+    <tr><td>扩展</td><td><code>LoadPrefabAsync / LoadSpriteAsync / LoadTexture2DAsync / LoadAudioClipAsync…</code></td><td>16 个类型化扩展方法（AssetComponent.Prefab.cs 等）</td></tr>
+    <tr><td rowspan="2">释放</td><td><code>UnloadAssetHandle(object handle)</code></td><td>handle 是 AssetHandle 时调 <code>Release()</code> 减引用；其他类型静默忽略</td></tr>
+    <tr><td><code>UnloadAsset(path) / UnloadUnusedAssetsAsync(pkg) / ClearAllBundleFilesAsync…</code></td><td>尝试卸载无句柄引用的资源 / 卸未用 / 清文件</td></tr>
+    <tr><td>查询</td><td><code>HasAssetPath / GetAssetInfo / GetAssetInfos(tag) / IsNeedDownload(path)</code></td><td>→ YooAssets.CheckLocationValid 等</td></tr>
+    <tr><td>包管理</td><td><code>CreateAssetsPackage / TryGetAssetsPackage / GetAssetsPackage / SetDefaultAssetsPackage</code></td><td>多包体系</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="init">3 InitPackageAsync 流程拆解</h2>
+<pre class="codeblock"><code data-lang="cs">public Task&lt;bool&gt; InitPackageAsync(string packageName, string hostServerURL, string fallbackHostServerURL, bool isDefaultPackage = false)
+{
+    var tcs = new TaskCompletionSource&lt;bool&gt;();
+    var resourcePackage = YooAssets.TryGetPackage(packageName);
+    if (resourcePackage == null)
+    {
+        resourcePackage = YooAssets.CreatePackage(packageName);
+        if (isDefaultPackage) { YooAssets.SetDefaultPackage(resourcePackage); }
+    }
+    var initOp = CreateInitializationOperationHandler(resourcePackage, hostServerURL, fallbackHostServerURL);
+    initOp.Completed += op =&gt;
+    {
+        if (op.Error == null && op.Status == EOperationStatus.Succeed && op.IsDone)
+            tcs.TrySetResult(true);
+        else
+            tcs.TrySetException(new Exception(op.Error));   // 自研层 ProcedurePatch 捕获后停留等待处理
+    };
+    return tcs.Task;
+}</code></pre>
+<div class="code-caption">Runtime/Asset/AssetManager.cs — 兜底：<code>AssetComponent.Awake</code> 在非编辑器下把 EditorSimulateMode 强制改为 HostPlayMode；WebGL 强制 WebPlayMode</div>
+
+<h2 id="playmode">4 四种播放模式（EPlayMode）</h2>
+<div class="tabs">
+  <div class="tab-btns">
+    <button class="tab-btn active">EditorSimulateMode</button>
+    <button class="tab-btn">OfflinePlayMode</button>
+    <button class="tab-btn">HostPlayMode</button>
+    <button class="tab-btn">WebPlayMode</button>
+  </div>
+  <div class="tab-panel active">
+    <p><span class="badge b-green">本项目默认</span> <strong>编辑器模拟模式</strong>：无需真机 AB，直接按收集器配置在内存里"模拟构建"出清单，配合 EditorFileSystem 从 AssetDatabase 读资源。开发期日常使用。</p>
+<pre class="codeblock"><code data-lang="cs">// AssetManager.Initialization.cs
+EditorSimulateModeHelper.SimulateBuild(nameof(EDefaultBuildPipeline.BuiltinBuildPipeline), "DefaultPackage")
+// 参数：EditorSimulateModeParameters { EditorFileSystemParameters }</code></pre>
+    <p>原理：编辑器下反射调用编辑器程序集 <code>YooAsset.Editor.AssetBundleSimulateBuilder.SimulateBuild</code>，按 Collector 配置生成 <code>SimulateBuildResult</code> 内存清单（非编辑器调用直接抛异常）。<strong>这意味着改收集器配置立即生效，不用打包。</strong></p>
+    <p>注意：自研层 <code>AssetService.InitializeAsync</code> 在此模式下直接返回 true（GameFrameX 组件启动时已按 <code>AssetOptions</code> 完成初始化），避免重复初始化。</p>
+  </div>
+  <div class="tab-panel">
+    <p><strong>离线模式</strong>：单机/内置包，无热更。资源打进安装包，运行时从内置文件系统（StreamingAssets 相关目录）读取。</p>
+<pre class="codeblock"><code data-lang="cs">// 参数：OfflinePlayModeParameters { BuildinFileSystemParameters = CreateDefaultBuildinFileSystemParameters() }</code></pre>
+    <p>适合：买断制单机、首包玩法完整、无补丁需求的场景。发布前需要真实构建 AB。</p>
+  </div>
+  <div class="tab-panel">
+    <p><strong>联机模式</strong>：热更主力。内置文件系统（首包资源）+ 缓存文件系统（下载的补丁资源，<code>RemoteServices(host, fallback)</code> 双地址）。</p>
+<pre class="codeblock"><code data-lang="cs">// 参数：HostPlayModeParameters {
+//     BuildinFileSystemParameters,                                  // 首包内置
+//     CacheFileSystemParameters = new RemoteServices(host, fallback) // CDN 主/备
+// }
+await asset.InitializeAsync(EPlayMode.HostPlayMode, hostUrl, fallbackHostUrl);</code></pre>
+    <div class="callout warn">
+      <div class="callout-title">本项目 v0.1 边界</div>
+      <p>HostPlayMode 的完整补丁流（静态版本请求 → 清单更新 → 创建下载器 → 断点续传/重试）尚未在 <code>IAssetService</code> 封装；当前 <code>InitializeAsync</code> 只做包初始化。联调时可用任意静态 HTTP 服务挂 CDN 目录（地址填 <code>GameFrameYLaunchSettings.HostUrl</code>，或用配置表 <code>TbGlobal.PatchUrl</code>——本仓已预置 <code>http://127.0.0.1:8080/CDN/...</code>）。</p>
+    </div>
+    <p>补丁状态机（EPatchStates，asset 包已备好事件）：<code>UpdateStaticVersion → UpdateManifest → CreateDownloader → DownloadWebFiles → PatchDone</code>，配套 <code>AssetPatchStatesChangeEventArgs</code> 等 6 个事件参数。</p>
+  </div>
+  <div class="tab-panel">
+    <p><strong>WebGL 模式</strong>：资源在 Web 文件系统（远端目录直读，无本地缓存目录概念），<code>AssetComponent.Awake</code> 在 UNITY_WEBGL 下强制切到此模式。</p>
+<pre class="codeblock"><code data-lang="cs">// 参数：WebPlayModeParameters { WebFileSystemParameters = WebPlayModeFileSystemProviderRegistry.CreateFileSystemParameters(host, fallback) }</code></pre>
+  </div>
+</div>
+
+<h2 id="handle">5 句柄族与引用计数（重点）</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>句柄</th><th>关键成员</th><th>用途</th></tr></thead>
+  <tbody>
+    <tr><td><code>AssetHandle</code></td><td><code>AssetObject / GetAssetObject&lt;T&gt;() / InstantiateSync()×5 / InstantiateAsync()×5 / WaitForAsyncComplete() / Release() / event Completed</code></td><td>单个资源；可直接实例化 prefab</td></tr>
+    <tr><td><code>AllAssetsHandle</code></td><td><code>AllAssetObjects : IReadOnlyList&lt;Object&gt;</code></td><td>整包对象</td></tr>
+    <tr><td><code>SubAssetsHandle</code></td><td><code>GetSubAssetObject&lt;T&gt;(name) / GetSubAssetObjects&lt;T&gt;()</code></td><td>子资源（图集切片等）</td></tr>
+    <tr><td><code>RawFileHandle</code></td><td><code>GetRawFileData() / GetRawFileText() / GetRawFilePath()</code></td><td>原始字节/文本</td></tr>
+    <tr><td><code>SceneHandle</code></td><td><code>SceneObject / ActivateScene() / UnSuspend() / UnloadAsync()</code></td><td>场景（见 04 章）</td></tr>
+    <tr><td><code>HandleBase</code></td><td><code>Status / LastError / Progress / Duration / IsDone / IsValid / Task</code>（可 yield 协程）</td><td>公共基类</td></tr>
+  </tbody>
+</table></div>
+
+<p><strong>核心语义：每次 Load 得到一个句柄 = 一份引用；<code>Release()</code>（即 Dispose）把引用计数减一，<strong>归零才真正卸载底层 Provider</strong>。</strong>没 Release 会泄漏，Release 多次会提前炸掉别人的引用。</p>
+
+<div class="demo">
+  <div class="demo-header"><span class="demo-tag">SIMULATOR</span>句柄引用计数演示（以 tbitem.bytes 为例）</div>
+  <div class="demo-body">
+    <div class="demo-controls">
+      <button class="btn sm primary" id="rc-load">📥 LoadAssetAsync&lt;TextAsset&gt;("tbitem")</button>
+      <button class="btn sm" id="rc-release">📤 ReleaseHandle(handle)</button>
+      <button class="btn sm" id="rc-reset">↺ 重置</button>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <div style="flex:1;min-width:300px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-faint);margin-bottom:4px">
+          <span>Provider(tbitem) 引用计数</span><span id="rc-count">0</span>
+        </div>
+        <div style="height:22px;background:var(--bg-soft);border-radius:6px;overflow:hidden">
+          <div id="rc-bar" style="height:100%;width:0;background:linear-gradient(90deg,#10b981,#34d399);transition:width .25s"></div>
+        </div>
+        <div id="rc-state" style="font-size:12.5px;margin-top:8px;color:var(--text-soft)">Provider 状态：<strong>未加载</strong></div>
+      </div>
+      <div style="flex:1;min-width:300px">
+        <div style="font-size:12px;font-weight:700;color:var(--text-faint);margin-bottom:6px">活跃句柄（谁持有谁负责 Release）</div>
+        <div id="rc-handles" class="info-panel" style="margin-top:0;min-height:60px;font-family:var(--mono);font-size:12.5px">（无）</div>
+      </div>
+    </div>
+    <div class="demo-log" id="rc-log"></div>
+  </div>
+</div>
+
+<div class="callout danger">
+  <div class="callout-title">三条铁律</div>
+  <ul style="margin:4px 0 0">
+    <li><strong>一次 Load 配一次 Release</strong>。<code>UnloadAssetHandle(object)</code> 只认 <code>AssetHandle</code> 类型，传错类型静默忽略（不会报错！）。</li>
+    <li><code>ConfigService.LoadAsync</code> 的正确示范：把全部表句柄收集进 List，<code>finally</code> 里统一释放——bytes 已进内存，句柄用完即走。</li>
+    <li>UI 框架内部自己管理句柄（<code>openUIFormInfo.SetAssetHandle(assetHandle)</code>），业务层不要对 UI prefab 手动 Load/Release。</li>
+  </ul>
+</div>
+
+<h2 id="collector">6 YooAsset 收集器（Collector）与寻址</h2>
+<p>编辑器侧配置在 <code>AssetBundleCollectorSetting.asset</code>（菜单 YooAsset → Bundle Collector）：<strong>Package → Group → Collector</strong> 三级。Collector 指定 Assets 下的收集路径与规则：</p>
+<ul>
+  <li><strong>寻址规则</strong>（AddressRule）：本项目配置组用 <code>AddressByFileName</code> —— <strong>定位地址 = 文件名去扩展名</strong>。所以 <code>Assets/Bundles/Config/tbitem.bytes</code> 的加载地址就是 <code>"tbitem"</code>，正好对上 <code>ConfigService</code> 的"表属性名小写"约定。</li>
+  <li>其他内置规则：<code>AddressDisable</code>（禁用寻址）、<code>AddressByGroupAndFileName</code>、<code>AddressByFolderAndFileName</code>。</li>
+  <li>包级开关：<code>EnableAddressable / LocationToLower / IncludeAssetGUID / AutoCollectShaders / UniqueBundleName</code> 与打包规则 PackRule、过滤规则 FilterRule、忽略规则 IgnoreRule。</li>
+</ul>
+<div class="callout warn">
+  <div class="callout-title">已知坑（README 排障清单）</div>
+  <p>Luban 重新生成会重建 <code>Bundles/Config</code> 目录导致 <strong>目录 GUID 变化</strong>，Collector 窗口提示 CollectPath/GUID 不匹配：窗口里点 <strong>Fix</strong>，或把 <code>AssetBundleCollectorSetting.asset</code> 里 CollectorGUID 改为该文件夹 .meta 的 guid。EditorSimulate 下加载配置失败 → 确认 Config 组启用。</p>
+</div>
+
+<h2 id="download">7 下载器与补丁（HostPlayMode 用）</h2>
+<pre class="codeblock"><code data-lang="cs">// ResourcePackage 上的下载器工厂（v3.2.0 签名）
+var downloader = package.CreateResourceDownloader(downloadingMaxNumber: 8, failedTryAgain: 3, timeout: 60);
+// 或按 tag：package.CreateResourceDownloader(new[] { "ui" }, 8, 3);
+downloader.TotalDownloadCount / TotalDownloadBytes;            // 总量
+downloader.OnDownloadOverCallback = op =&gt; { };
+downloader.OnDownloadProgressCallback = (ok, need, size, cur) =&gt; { };
+downloader.BeginDownload();                                    // Pause/Resume/Cancel/Combine
+// 内置解包：var unpacker = package.CreateResourceUnpacker(unpackingMaxNumber, failedTryAgain);</code></pre>
+
+<footer class="pagenav"></footer>
+</main>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+/* ================= 引用计数演示 ================= */
+(function initRc() {
+  var log = $("#rc-log"), count = 0, handles = [], seq = 0, loaded = false;
+  function render() {
+    $("#rc-count").textContent = String(count);
+    $("#rc-bar").style.width = Math.min(100, count * 33.3) + "%";
+    $("#rc-state").innerHTML = "Provider 状态：<strong style='color:" + (loaded ? "var(--ok)" : "var(--text-faint)") + "'>" + (loaded ? "已加载（AB 在内存）" : "未加载") + "</strong>";
+    $("#rc-handles").innerHTML = handles.length
+      ? handles.map(function (h) { return "AssetHandle#" + h + " → tbitem.bytes"; }).join("<br>")
+      : "（无）";
+  }
+  $("#rc-load").addEventListener("click", function () {
+    seq++; handles.push(seq); count++; loaded = true;
+    dlog(log, "ok", "LoadAssetAsync(\"tbitem\") → 新句柄 #" + seq + "（Provider.RefCount = " + count + "）");
+    if (count === 2) dlog(log, "info", "└ 第二次 Load 复用同一个 Provider，计数 +1（不重复加载 AB）");
+    if (count > 3) dlog(log, "warn", "└ 引用有点多了——检查是不是忘了 Release");
+    render();
+  });
+  $("#rc-release").addEventListener("click", function () {
+    if (!handles.length) { dlog(log, "err", "ReleaseHandle：没有活跃句柄 —— 对已释放的句柄再 Release 是未定义行为（真机会炸）"); return; }
+    var h = handles.pop(); count--;
+    dlog(log, "info", "ReleaseHandle(#" + h + ") → Provider.RefCount = " + count);
+    if (count === 0) { loaded = false; dlog(log, "ok", "✓ 引用归零，Provider 真正卸载，AB 资源释放"); }
+    render();
+  });
+  $("#rc-reset").addEventListener("click", function () {
+    count = 0; handles = []; seq = 0; loaded = false; log.innerHTML = ""; render();
+  });
+  render();
+  dlog(log, "info", "试试 Load 两次 → Release 两次，观察计数与 Provider 状态");
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>01 GameFrameY.Core · 模块管理与服务发现 — GameFrameY 模块说明系列</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-page="core.html">
+<aside class="sidebar" id="sidebar"></aside>
+<div class="main">
+<main class="content">
+
+<header class="hero">
+  <span class="chapter">CH.01 · 自研核心层</span>
+  <h1>GameFrameY.Core — 模块管理与服务发现</h1>
+  <p class="lede">整个仓库的核心交付：<code>com.gameframey.core</code>（v0.1.0）用 VContainer 实现了<strong>模块自动发现 → 依赖拓扑排序 → 链式子作用域装配</strong>的模块体系，配合 <code>IServiceRegistry</code> 的两级服务发现，再把六个 GameFrameX 组件桥接成服务。本章逐文件拆解，并附两个可交互演示。</p>
+  <div class="hero-facts">
+    <span class="chip acc">com.gameframey.core 0.1.0</span>
+    <span class="chip">依赖：VContainer 1.19 + UniTask 2.6</span>
+    <span class="chip">Runtime/Core + Runtime/Bridge 两个 asmdef</span>
+  </div>
+</header>
+
+<h2 id="asmdef">1 程序集划分与依赖</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>程序集</th><th>位置</th><th>引用</th></tr></thead>
+  <tbody>
+    <tr><td><code>GameFrameY.Core</code></td><td><code>Runtime/Core/</code>（纯逻辑，无 Unity 组件）</td><td>VContainer、UniTask.Runtime</td></tr>
+    <tr><td><code>GameFrameY.Bridge</code></td><td><code>Runtime/Bridge/</code></td><td>Core + 全部 GameFrameX 组件程序集 + YooAsset.Runtime + GameFrameY.Config + Luban.Runtime</td></tr>
+    <tr><td><code>GameFrameY.Config</code></td><td><code>Assets/GameFrameY/Config/</code></td><td>Luban.Runtime（rootNamespace: <code>cfg</code>）</td></tr>
+    <tr><td><code>GameFrameY.Game</code></td><td><code>Assets/GameFrameY/Game/</code></td><td>Core + Bridge + Config（业务模块写在这里）</td></tr>
+  </tbody>
+</table></div>
+<p class="table-note">Core 与 Bridge 分开的意义：模块体系本身不依赖任何 GameFrameX 包，理论上可脱离 GameFrameX 单测。</p>
+
+<h2 id="module">2 模块体系（Core/Module）</h2>
+
+<h3>2.1 声明一个模块：GameModuleAttribute</h3>
+<p>任何<strong>非抽象、实现 <code>IGameModule</code>、带 <code>[GameModule]</code> 特性</strong>的类都会被发现。特性全部属性：</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>属性</th><th>类型</th><th>默认值</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td><code>Name</code></td><td>string</td><td>构造必填</td><td>模块唯一标识；依赖声明引用此名（比较用 OrdinalIgnoreCase）。为空时回退：类型名去掉 "Module" 后缀（<code>AssetModule</code> → <code>"Asset"</code>）</td></tr>
+    <tr><td><code>Priority</code></td><td>int</td><td>0</td><td>同层无依赖关系时的装配顺序参考，小者先装；再按名字 Ordinal 稳定排序</td></tr>
+    <tr><td><code>Dependencies</code></td><td>string[]</td><td>空数组</td><td>依赖的模块名列表；缺失依赖在解析期抛 <code>GameModuleException</code></td></tr>
+    <tr><td><code>InstallerType</code></td><td>Type</td><td>null</td><td>模块的 VContainer 注册器（实现 <code>IInstaller</code>），为空则是纯代码模块</td></tr>
+    <tr><td><code>Startup</code></td><td>ModuleStartup</td><td>Bootstrap</td><td><code>Bootstrap</code>=框架自举时装（六个桥接模块）；<code>Deferred</code>=EnterGame 流程装（业务模块，未来热更程序集同入口）</td></tr>
+  </tbody>
+</table></div>
+
+<h3>2.2 模块生命周期：IGameModule 与三个 Tick 接口</h3>
+<pre class="codeblock"><code data-lang="cs">public interface IGameModule
+{
+    GameModuleDescriptor Descriptor { get; set; }   // 装配时由管理器回填
+
+    UniTask OnInitializeAsync();  // 子作用域构建、构造注入结束后调用（按装配顺序串行 await）
+    UniTask OnStartAsync();       // 同批全部模块 Initialize 完成后调用
+    UniTask OnShutdownAsync();    // 卸载前调用（按装配逆序）
+}
+
+// 可选接口，由 GameModuleManager 的 Tick 泵驱动（挂 VContainer PlayerLoop EntryPoint）
+public interface ITickableModule      { void OnTick(float elapseSeconds, float realElapseSeconds); }
+public interface IFixedTickableModule { void OnFixedTick(float elapseSeconds, float realElapseSeconds); }
+public interface ILateTickableModule  { void OnLateTick(float elapseSeconds, float realElapseSeconds); }</code></pre>
+<div class="code-caption">Runtime/Core/Module/IGameModule.cs</div>
+
+<p>模块状态机：<code>Discovered → Installing → Initialized → Started → Shutdown</code>（<code>GameModuleState</code> 枚举）。只有 <strong>Started</strong> 状态的模块会收到 Tick 回调。</p>
+
+<h3>2.3 GameModuleBase：可选基类</h3>
+<pre class="codeblock"><code data-lang="cs">public abstract class GameModuleBase : IGameModule
+{
+    public GameModuleDescriptor Descriptor { get; set; }
+
+    [Inject]
+    public IServiceRegistry Services { get; private set; }   // 属性注入中央服务注册表
+
+    public virtual UniTask OnInitializeAsync() => UniTask.CompletedTask;
+    public virtual UniTask OnStartAsync()      => UniTask.CompletedTask;
+    public virtual UniTask OnShutdownAsync()   => UniTask.CompletedTask;
+
+    // 登记为 TService，归属当前模块；模块卸载时自动注销
+    protected void RegisterService&lt;TService&gt;(TService instance) where TService : class
+    {
+        Services?.Register(instance, Descriptor?.Name);
+    }
+}</code></pre>
+<div class="code-caption">Runtime/Core/Module/GameModuleBase.cs — 派生类可自由声明构造函数参数（由所在子作用域及祖先作用域解析）</div>
+
+<h3>2.4 自动发现：ModuleScanner</h3>
+<p><code>ModuleScanner.ScanModules(params Assembly[] assemblies)</code>：参数为空时扫描 <code>AppDomain.CurrentDomain.GetAssemblies()</code>，否则只扫指定程序集（热更程序集加载后二次装配用）。过滤规则：</p>
+<ul>
+  <li>程序集名以下列前缀开头即排除（忽略大小写）：<code>System / mscornet / netstandard / Mono / Microsoft / Unity / UnityEngine / UnityEditor / JetBrains / nunit</code></li>
+  <li><code>ReflectionTypeLoadException</code> 降级为已加载部分类型；其他反射异常跳过整个程序集</li>
+  <li>类型筛选：非 abstract、非 interface、<code>typeof(IGameModule).IsAssignableFrom(type)</code>、带 <code>GameModuleAttribute</code></li>
+</ul>
+
+<h3>2.5 依赖解析：ModuleDependencyResolver（DFS 拓扑排序）</h3>
+<p>排序算法（与源码一致）：</p>
+<ol>
+  <li>为每个类型建 <code>GameModuleDescriptor</code>，按名查重，重名抛异常；</li>
+  <li>种子序列 = <code>OrderBy(Priority).ThenBy(Name, Ordinal)</code>——注意是对<strong>全量模块</strong>排序（含 Deferred），阶段过滤发生在解析之后；</li>
+  <li>对每个种子做 DFS：先递归访问全部依赖（后序输出 ⇒ 依赖先装配），依赖缺失抛 <code>"模块 {name} 声明的依赖 [{dep}] 未在扫描结果中找到"</code>，遇到回边抛 <code>"模块依赖成环: A -&gt; B -&gt; A"</code>；</li>
+  <li>结果回写 <code>InstallOrder</code>。</li>
+</ol>
+
+<div class="callout warn">
+  <div class="callout-title">源码级发现：v0.1 的环检测是死代码</div>
+  <p><code>ModuleDependencyResolver.Visit</code> 里环检测写的是 <code>if (visited.Contains(name)) { if (visiting.Contains(name)) throw 成环; return; }</code>——但"正在访问中"的节点<strong>不在 visited</strong>（完成前不会加入），而完成时又会先 <code>visiting.Remove</code> 再 <code>visited.Add</code>，两个集合永不同时含同一名字。于是真正的依赖环不会触发友好报错，而是<strong>无限递归直到栈溢出</strong>。修法很简单：先查 <code>visiting.Contains</code> 抛环，再查 <code>visited</code> 返回。下方模拟器按修正后的语义实现（所以能给出漂亮的成环路径报错）。</p>
+</div>
+
+<div class="demo">
+  <div class="demo-header"><span class="demo-tag">SIMULATOR</span>拓扑排序 &amp; 作用域链模拟器
+    <span style="margin-left:auto"><button class="btn sm" id="topo-cycle">⚡ 注入循环依赖</button>
+    <button class="btn sm" id="topo-reset">↺ 重置</button></span>
+  </div>
+  <div class="demo-body">
+    <p style="font-size:13px;color:var(--text-soft);margin-top:0">预置了仓库里真实的 7 个模块（勾选启用/停用）。点击「求解装配顺序」看 DFS 结果；注入循环依赖可观察报错路径。Deferred 模块（Demo）在 Bootstrap 阶段之后单独装配。</p>
+    <div class="demo-controls" id="topo-modules"></div>
+    <div class="demo-controls">
+      <button class="btn primary sm" id="topo-run">求解装配顺序</button>
+      <label class="switch"><input type="checkbox" id="topo-deferred" checked><span class="track"></span>包含 Deferred 装配阶段（EnterGame）</label>
+    </div>
+    <div id="topo-result"></div>
+    <div class="demo-log" id="topo-log"></div>
+  </div>
+</div>
+
+<h3>2.6 装配与驱动：GameModuleManager</h3>
+<p>管理器本身是根容器的 <strong>VContainer EntryPoint</strong>（实现 <code>ITickable / IFixedTickable / ILateTickable</code>，挂 PlayerLoop，无需 MonoBehaviour）。装配核心两阶段：</p>
+<pre class="codeblock"><code data-lang="cs">// 阶段一（逐个交错：建作用域 + Init）
+foreach (var descriptor in descriptors)
+{
+    var installer = CreateInstaller(descriptor);            // InstallerType + 模块类型本身包成 ModuleScopeInstaller
+    var parent = _lastCreatedScope ?? _rootScope;           // ★ 链式作用域：以"上一个创建的作用域"为父
+    var scope = parent.CreateChild(installer, $"GameFrameY.Module.{descriptor.Name}");
+    var module = (IGameModule)scope.Container.Resolve(descriptor.ModuleType);
+    await module.OnInitializeAsync();                        // 每装一个就 Init 一个
+}
+// 阶段二（同批按装配序串行启动）
+foreach (var descriptor in _installed.Where(d =&gt; d.State == GameModuleState.Initialized))
+{
+    await descriptor.ModuleInstance.OnStartAsync();
+    descriptor.State = GameModuleState.Started;
+}</code></pre>
+<div class="code-caption">Runtime/Core/Module/GameModuleManager.cs（InstallCoreAsync 节选）——整体顺序：Init(M1)→…→Init(Mn)→Start(M1)→…→Start(Mn)</div>
+
+<p><strong>作用域链</strong>是本章最重要的架构约束：第 N 个模块的子作用域以第 N-1 个为父，形成 <code>Root → M1 → M2 → … → Mn</code> 线性链。VContainer 子作用域只能向上解析，因此模块能构造注入的 = 自己 Installer 注册的 + 声明过依赖的（保证在祖先链上）+ 根作用域的。未声明的跨模块引用在装配期即失败——<strong>依赖声明即保护</strong>。</p>
+
+<div class="callout info">
+  <div class="callout-title">真实装配顺序是怎么算出来的</div>
+  <p><code>InitializeBootstrapModulesAsync</code> 先对<strong>全量扫描结果</strong>（含 Deferred 的 Demo）做一次 DFS 排序，<em>然后</em>才过滤出 Bootstrap 模块。全量种子按 Priority 升序，Demo(100) 排第一，DFS 访问它的依赖 [Config, Asset] 把 <strong>Asset → Config</strong> 拉到序列最前（Config 又依赖 Asset，先输出 Asset）；剩余 Bootstrap 模块按 Priority 依次输出。所以六个桥接模块的真实装配顺序是 <strong>Asset → Config → Network → UI → Scene → Event</strong>，Deferred 阶段 Demo 挂在 Event 的子作用域下。上方模拟器可以复现这条链。</p>
+</div>
+
+<div class="svg-wrap">
+<svg viewBox="0 0 860 150" width="860" height="150" xmlns="http://www.w3.org/2000/svg">
+  <defs><marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#8a92a1"/></marker></defs>
+  <g font-family="Consolas,monospace" font-size="12.5" text-anchor="middle">
+    <rect x="10" y="52" width="88" height="40" rx="8" fill="#6366f1"/><text x="54" y="76" fill="#fff">Root</text>
+    <rect x="126" y="52" width="82" height="40" rx="8" fill="#0ea5e9"/><text x="167" y="70" fill="#fff">Asset</text><text x="167" y="85" fill="#cdeffd" font-size="10">1000</text>
+    <rect x="236" y="52" width="92" height="40" rx="8" fill="#0ea5e9"/><text x="282" y="70" fill="#fff">Config</text><text x="282" y="85" fill="#cdeffd" font-size="10">900 ⇒Asset</text>
+    <rect x="356" y="52" width="92" height="40" rx="8" fill="#0ea5e9"/><text x="402" y="70" fill="#fff">Network</text><text x="402" y="85" fill="#cdeffd" font-size="10">700</text>
+    <rect x="476" y="52" width="70" height="40" rx="8" fill="#0ea5e9"/><text x="511" y="70" fill="#fff">UI</text><text x="511" y="85" fill="#cdeffd" font-size="10">800</text>
+    <rect x="574" y="52" width="86" height="40" rx="8" fill="#0ea5e9"/><text x="617" y="70" fill="#fff">Scene</text><text x="617" y="85" fill="#cdeffd" font-size="10">990</text>
+    <rect x="686" y="52" width="82" height="40" rx="8" fill="#0ea5e9"/><text x="727" y="70" fill="#fff">Event</text><text x="727" y="85" fill="#cdeffd" font-size="10">1200</text>
+    <rect x="126" y="6" width="202" height="34" rx="8" fill="none" stroke="#f59e0b" stroke-dasharray="5 4"/><text x="227" y="27" fill="#d97706">Demo(100) 首个种子 ⇒ 先装 Asset → Config</text>
+    <line x1="98" y1="72" x2="124" y2="72" stroke="#8a92a1" stroke-width="1.6" marker-end="url(#arr)"/>
+    <line x1="208" y1="72" x2="234" y2="72" stroke="#8a92a1" stroke-width="1.6" marker-end="url(#arr)"/>
+    <line x1="328" y1="72" x2="354" y2="72" stroke="#8a92a1" stroke-width="1.6" marker-end="url(#arr)"/>
+    <line x1="448" y1="72" x2="474" y2="72" stroke="#8a92a1" stroke-width="1.6" marker-end="url(#arr)"/>
+    <line x1="546" y1="72" x2="572" y2="72" stroke="#8a92a1" stroke-width="1.6" marker-end="url(#arr)"/>
+    <line x1="660" y1="72" x2="684" y2="72" stroke="#8a92a1" stroke-width="1.6" marker-end="url(#arr)"/>
+    <text x="430" y="130" fill="#8a92a1" font-size="11.5">◀ 解析方向：子作用域沿父链向上查找注册（Deferred 的 Demo 装配时父作用域 = Event）</text>
+  </g>
+</svg>
+</div>
+
+<p>其余职责：</p>
+<ul>
+  <li><strong>Tick 泵</strong>：每帧遍历 <code>_installed</code>（装配序），仅 <code>Started</code> 且实现对应接口的模块收到回调；单模块异常捕获记日志不中断其他模块。</li>
+  <li><strong>ShutdownAsync</strong>：逆序卸载——仅 Initialized/Started 状态才调 <code>OnShutdownAsync</code>（异常吞掉记日志）→ <code>ServiceRegistry.UnregisterAll(模块名)</code> 注销其登记的服务 → <code>scope.Dispose()</code>。</li>
+  <li><strong>幂等</strong>：<code>InitializeBootstrapModulesAsync</code> 有 <code>_bootstrapInstalled</code> 防重入；<code>InstallDeferredModulesAsync</code> 过滤已装配的。</li>
+  <li><strong>Installer 包装</strong>：<code>ModuleScopeInstaller</code> 先 <code>builder.Register(模块类型, 模块类型, Singleton)</code>（模块实例由自己作用域创建），再执行业务 Installer。</li>
+</ul>
+
+<h2 id="service">3 服务发现（Core/Service）</h2>
+<p><code>IServiceRegistry</code> 的两级查找语义：① <strong>中央注册表</strong>——模块运行期 <code>RegisterService(new Xxx())</code> 登记的实例（含归属模块、增删事件）；② <strong>根容器兜底</strong>——各模块 Installer 注册的类型服务（VContainer <code>TryResolve</code>）。消费优先级：<strong>构造注入 &gt; 服务定位</strong>（后者面向热更代码 / 场景对象 / 调试）。</p>
+
+<div class="table-wrap"><table>
+  <thead><tr><th>API</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td><code>event Action&lt;ServiceChangeEventArgs&gt; ServiceChanged</code></td><td>Added / Removed 变更事件（参数含 ServiceDescriptor）</td></tr>
+    <tr><td><code>Register&lt;T&gt;(T instance, string ownerModuleId = null)</code></td><td>登记实例；类型校验 + ReferenceEquals 去重（重复静默返回）</td></tr>
+    <tr><td><code>TryGetService&lt;T&gt;(out T)</code> / <code>GetService&lt;T&gt;()</code></td><td>两级查找；GetService 失败抛 <code>ServiceRegistryException</code></td></tr>
+    <tr><td><code>GetServices&lt;T&gt;()</code> / <code>GetAllServices(Type)</code></td><td>多实现聚合（中央表全部 + 容器 IEnumerable，按引用去重）</td></tr>
+    <tr><td><code>Unregister&lt;T&gt;(T)</code> / <code>UnregisterAll(ownerModuleId)</code></td><td>注销；模块卸载时管理器自动调 UnregisterAll</td></tr>
+    <tr><td><code>UniTask&lt;T&gt; WaitServiceAsync&lt;T&gt;(CancellationToken)</code></td><td><strong>未就绪先等待</strong>：订阅 ServiceChanged 后二次检查防竞态，命中即完成</td></tr>
+  </tbody>
+</table></div>
+
+<p>同类型多实例时中央表<strong>后登记者优先</strong>（<code>list[list.Count-1]</code>），便于覆盖。两个防御性设计值得记住：① WaitServiceAsync 订阅事件后立即再查一次（避免登记发生在"查"与"订阅"之间）；② 注册表仅设计为主线程使用。</p>
+
+<div class="demo">
+  <div class="demo-header"><span class="demo-tag">SIMULATOR</span>服务注册表 &amp; WaitServiceAsync 演示</div>
+  <div class="demo-body">
+    <p style="font-size:13px;color:var(--text-soft);margin-top:0">按真实时序操作：先让一个"等待者"挂起在 WaitServiceAsync 上，再装配模块触发服务登记，观察等待者如何被唤醒；最后卸载模块看自动注销。</p>
+    <div class="demo-controls">
+      <button class="btn sm primary" id="svc-wait">⏳ 等待者：await WaitServiceAsync&lt;IDemoGreetingService&gt;()</button>
+      <button class="btn sm" id="svc-install">📦 EnterGame：装配 Demo 模块（OnStartAsync 里 RegisterService）</button>
+      <button class="btn sm" id="svc-get">🔍 GetService&lt;IConfigService&gt;()（两级行为）</button>
+      <button class="btn sm" id="svc-unload">🗑 卸载 Demo 模块（UnregisterAll）</button>
+    </div>
+    <div class="grid cols-2">
+      <div>
+        <div style="font-size:12px;font-weight:700;color:var(--text-faint);margin-bottom:6px">中央注册表（运行期动态登记）</div>
+        <div id="svc-central" class="info-panel" style="min-height:84px;margin-top:0;font-family:var(--mono);font-size:12.5px">（空）</div>
+      </div>
+      <div>
+        <div style="font-size:12px;font-weight:700;color:var(--text-faint);margin-bottom:6px">根容器（模块 Installer 注册的类型服务）</div>
+        <div id="svc-container" class="info-panel" style="min-height:84px;margin-top:0;font-family:var(--mono);font-size:12.5px">IAssetService → AssetService<br>IConfigService → ConfigService<br>…（六桥接模块装配时注册）</div>
+      </div>
+    </div>
+    <div class="demo-log" id="svc-log"></div>
+  </div>
+</div>
+
+<h2 id="bridge">4 六大桥接模块（Bridge/）</h2>
+<p>六个 Bootstrap 模块把 GameFrameX 组件包装成服务。共同实现模式：<strong>模块类是空壳（仅声明特性），Installer 注册服务单例，服务用惰性静态属性解析组件、自身无状态</strong>：</p>
+<pre class="codeblock"><code data-lang="cs">[GameModule("Asset", Priority = 1000, InstallerType = typeof(AssetModuleInstaller))]
+public sealed class AssetModule : GameModuleBase { }
+
+public sealed class AssetModuleInstaller : IInstaller
+{
+    public void Install(IContainerBuilder builder)
+    {
+        builder.Register&lt;IAssetService&gt;(_ =&gt; new AssetService(), Lifetime.Singleton);
+    }
+}
+
+public sealed class AssetService : IAssetService
+{
+    // 惰性解析：GameFrameX 宿主在 AfterSceneLoad 才创建，装配期不能直接取
+    private static AssetComponent Component =&gt; GameEntry.GetComponent&lt;AssetComponent&gt;();
+}</code></pre>
+<div class="code-caption">Runtime/Bridge/Asset/AssetModule.cs — 其余五个模块完全同构</div>
+
+<div class="table-wrap"><table>
+  <thead><tr><th>模块</th><th>Priority</th><th>Dependencies</th><th>服务接口</th><th>包装的组件</th><th>关键 API</th></tr></thead>
+  <tbody>
+    <tr><td><code>Network</code></td><td>700</td><td>—</td><td><code>INetworkService</code></td><td>NetworkComponent</td><td><code>CreateChannel / GetChannel / HasChannel</code>（连接与发送在 <code>INetworkChannel</code> 上）</td></tr>
+    <tr><td><code>UI</code></td><td>800</td><td>—</td><td><code>IUIService</code></td><td>UIComponent (UGUI)</td><td><code>OpenUIAsync&lt;T&gt; / CloseUI&lt;T&gt;</code>（注意返回 Task 而非 UniTask）</td></tr>
+    <tr><td><code>Config</code></td><td>900</td><td><code>["Asset"]</code></td><td><code>IConfigService</code></td><td>（经 IAssetService 读 Luban bytes）</td><td><code>Tables { get; } / UniTask LoadAsync()</code>（幂等）</td></tr>
+    <tr><td><code>Scene</code></td><td>990</td><td>—</td><td><code>ISceneService</code></td><td>SceneComponent</td><td><code>LoadSceneAsync / UnloadScene / MainCamera</code></td></tr>
+    <tr><td><code>Asset</code></td><td>1000</td><td>—</td><td><code>IAssetService</code></td><td>AssetComponent (YooAsset)</td><td><code>InitializeAsync / LoadAssetAsync&lt;T&gt; / LoadAssetSync / ReleaseHandle</code></td></tr>
+    <tr><td><code>Event</code></td><td>1200</td><td>—</td><td><code>IEventService</code></td><td>EventComponent</td><td><code>Subscribe / Unsubscribe / Fire(string) / Fire(GameEventArgs)</code>（订阅幂等）</td></tr>
+  </tbody>
+</table></div>
+<p class="table-note">为什么 Config 声明依赖 Asset：ConfigService 构造注入 IAssetService，需要保证 Asset 模块的服务在自己作用域的祖先链上可见——依赖声明保证装配顺序，VContainer 沿链解析。</p>
+
+<p><code>IConfigService.LoadAsync</code> 的实现是理解配置链路的钥匙（详见 <a href="config.html">07 章</a>）：反射枚举 <code>cfg.Tables</code> 全部公共属性，以<strong>属性名小写</strong>为 YooAsset 地址加载 <code>TextAsset</code>，取 bytes 后用 Luban 约定委托构造：</p>
+<pre class="codeblock"><code data-lang="cs">foreach (var property in properties)
+{
+    var tableFileName = property.Name.ToLowerInvariant();          // "TbItem" → "tbitem"
+    var handle = await _assetService.LoadAssetAsync&lt;TextAsset&gt;(tableFileName);
+    bytesByName[tableFileName] = ((TextAsset)handle.AssetObject).bytes;
+}
+Tables = new cfg.Tables(name =&gt; new ByteBuf(bytesByName[name]));  // Func&lt;string, ByteBuf&gt; 装载委托
+// finally 中释放全部句柄</code></pre>
+
+<h2 id="launch">5 启动编排（Startup → RootInstaller → Launcher → Procedures）</h2>
+
+<h3>5.1 组合根三件套</h3>
+<pre class="codeblock"><code data-lang="cs">// ① BeforeSceneLoad 建根作用域（无需场景摆放任何东西）
+[RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+private static void Bootstrap()
+{
+    if (_rootCreated) return;
+    _rootCreated = true;
+    ConfigureGameFrameXOptions();   // 必须发生在组件首次消费前：AssetOptions/SceneOptions/ProcedureOptions
+    var scope = LifetimeScope.Create(new GameFrameYRootInstaller(), "GameFrameY Root");
+    Object.DontDestroyOnLoad(scope.gameObject);
+}
+
+// ② 根注册器：四件套
+public void Install(IContainerBuilder builder)
+{
+    builder.Register&lt;IServiceRegistry&gt;(r =&gt; new ServiceRegistry(r), Lifetime.Singleton);
+    builder.RegisterInstance(new GameFrameYLaunchSettings());
+    builder.RegisterEntryPoint&lt;GameModuleManager&gt;(Lifetime.Singleton);        // Tick 泵
+    builder.RegisterEntryPoint&lt;GameFrameYGameLauncher&gt;(Lifetime.Singleton);  // 启动协调器
+}
+
+// ③ 启动协调器（IAsyncStartable，首帧 Startup 时机执行）
+public async UniTask StartAsync(CancellationToken cancellation)
+{
+    await UniTask.WaitUntil(IsGameFrameXReady, cancellationToken: cancellation);  // 等 AfterSceneLoad 的宿主
+    await _modules.InitializeBootstrapModulesAsync();
+    StartDefaultProcedures();   // ReinitializeProcedures + StartProcedure(Launch)
+}</code></pre>
+<div class="code-caption">Runtime/Bridge/GameFrameYStartup.cs / GameFrameYRootInstaller.cs / GameFrameYGameLauncher.cs</div>
+
+<h3>5.2 四个流程（Procedures/）</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th>流程</th><th>做什么</th><th>失败行为</th></tr></thead>
+  <tbody>
+    <tr><td><code>ProcedureLaunch</code></td><td>打启动横幅日志，立即 <code>GoTo&lt;ProcedurePatch&gt;()</code></td><td>—</td></tr>
+    <tr><td><code>ProcedurePatch</code></td><td><code>DelayFrame(2)</code> 两帧防御等组件自身 Start → <code>IAssetService.InitializeAsync(PlayMode, HostUrl, Fallback)</code> 初始化 YooAsset 包（EditorSimulate 下直接成功）</td><td>失败不跳转，停留等待处理</td></tr>
+    <tr><td><code>ProcedureLoadConfig</code></td><td><code>IConfigService.LoadAsync()</code>，打日志"TbItem N 条，TbServerList N 条"</td><td>异常被 RunFlow 捕获记日志，停留当前流程</td></tr>
+    <tr><td><code>ProcedureEnterGame</code></td><td><code>InstallDeferredModulesAsync()</code> 装配业务模块 → <code>Fire(GameFrameYEventIds.GameReady)</code></td><td>同上</td></tr>
+  </tbody>
+</table></div>
+<p>流程基类 <code>GameFrameYProcedure</code> 提供了 <strong>RunFlow</strong> 助手——在 FSM 的同步回调 <code>OnEnter</code> 里安全启动异步流程：</p>
+<pre class="codeblock"><code data-lang="cs">protected void RunFlow(Func&lt;UniTask&gt; flow)
+{
+    UniTask.Void(async () =&gt;
+    {
+        try { await flow(); }
+        catch (Exception e) { GfyLog.Error($"流程 {GetType().Name} 异步流程异常: {e}"); }  // 停留在当前流程
+    });
+}</code></pre>
+<p>事件常量目前只有一个：<code>GameFrameYEventIds.GameReady = "GameFrameY.GameReady"</code>。</p>
+
+<h2 id="demo">6 参考实现：Demo 业务模块（全文 51 行）</h2>
+<p>位于 <code>Assets/GameFrameY/Game/Modules/Demo/</code>，一次演示三个能力——配置读取、动态服务登记与发现、Tick 心跳：</p>
+<pre class="codeblock"><code data-lang="cs">[GameModule("Demo", Startup = ModuleStartup.Deferred, Priority = 100,
+            Dependencies = new[] { "Config", "Asset" })]
+public sealed class DemoModule : GameModuleBase, ITickableModule
+{
+    private float _tickTimer;
+    private int _tickCount;
+
+    public override UniTask OnStartAsync()
+    {
+        var config = Services.GetService&lt;IConfigService&gt;();
+
+        // 1) Luban 配置读取（YooAsset → bytes → cfg.Tables）
+        var item = config.Tables.TbItem.GetOrDefault(10001);
+        GfyLog.Info($"[Demo] TbItem[10001] = {item?.Name}（{item?.Desc}）价格 {item?.Price} 品质 {item?.Quality}；" +
+                    $"TbGlobal.HotfixEnabled = {config.Tables.TbGlobal.HotfixEnabled}");
+
+        // 2) 动态服务登记 → 其他模块可 WaitServiceAsync 发现
+        RegisterService(new DemoGreetingService());
+        var greeting = Services.GetService&lt;IDemoGreetingService&gt;().SayHello("GameFrameY");
+        GfyLog.Info($"[Demo] {greeting}");
+        return UniTask.CompletedTask;
+    }
+
+    public void OnTick(float elapseSeconds, float realElapseSeconds)
+    {
+        _tickTimer += realElapseSeconds;        // 用 unscaled 时间
+        if (_tickTimer &lt; 3f) return;
+        _tickTimer = 0f;
+        GfyLog.Info($"[Demo] Tick 心跳 #{++_tickCount}");   // 每 3 秒一条
+    }
+}</code></pre>
+
+<h2 id="howto">7 如何新增一个业务模块</h2>
+<div class="callout tip">
+  <div class="callout-title">最小模板（Shop 模块示例）</div>
+<pre class="codeblock" style="margin:8px 0 0"><code data-lang="cs">[GameModule("Shop", Startup = ModuleStartup.Deferred,
+            Dependencies = new[] { "Config", "Asset", "UI" },
+            InstallerType = typeof(ShopModuleInstaller))]
+public sealed class ShopModule : GameModuleBase, ITickableModule
+{
+    public override UniTask OnStartAsync()
+    {
+        RegisterService(new ShopService());   // 动态登记，别处可 WaitServiceAsync
+        return UniTask.CompletedTask;
+    }
+    public void OnTick(float dt, float rdt) { /* 每帧 */ }
+}
+
+public sealed class ShopModuleInstaller : IInstaller
+{
+    public void Install(IContainerBuilder builder)
+    {
+        // 构造注入用：依赖方在 Dependencies 里声明 "Shop" 即可注入 IShopService
+        builder.Register&lt;IShopService&gt;(_ =&gt; new ShopService(), Lifetime.Singleton);
+    }
+}</code></pre>
+</div>
+<p>要点：① 名字即依赖声明的键，别重名；② 只在 Dependencies 里声明真正要注入的服务来源模块；③ 需要每帧逻辑就实现 <code>ITickableModule</code>；④ 热更程序集加载后用 <code>InstallDeferredModulesAsync(assembly)</code> 二次装配（HybridCLR 预留）。</p>
+
+<h2 id="limits">8 已知边界（v0.1）</h2>
+<ul>
+  <li>作用域链是<strong>线性链</strong>：先装模块的服务对后装模块全部可见（声明依赖是"保证可见"的子集）；卸载单个中间模块会破坏链——v0.1 只支持整体 <code>ShutdownAsync</code> 逆序卸载。</li>
+  <li><strong>依赖环不会得到友好报错</strong>：<code>ModuleDependencyResolver</code> 的环检测因检查顺序问题形同虚设（见 §2.5 的源码级发现），真实环会栈溢出；建议先查 <code>visiting</code> 再查 <code>visited</code>。</li>
+  <li>HostPlayMode 的静态版本 / 清单 / 断点续传下载流未实现（<code>InitializeAsync</code> 仅初始化包）。</li>
+  <li>HybridCLR 未启用，但 <code>InstallDeferredModulesAsync(params Assembly[])</code> 入口已预留。</li>
+  <li>VContainer SourceGenerator 未启用（反射注入模式）。</li>
+</ul>
+
+<footer class="pagenav"></footer>
+</main>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+/* ================= 拓扑排序模拟器 ================= */
+var MODULES = [
+  { name: "Network", pri: 700,  deps: [],           startup: "Bootstrap", service: "INetworkService" },
+  { name: "UI",      pri: 800,  deps: [],           startup: "Bootstrap", service: "IUIService" },
+  { name: "Config",  pri: 900,  deps: ["Asset"],    startup: "Bootstrap", service: "IConfigService" },
+  { name: "Scene",   pri: 990,  deps: [],           startup: "Bootstrap", service: "ISceneService" },
+  { name: "Asset",   pri: 1000, deps: [],           startup: "Bootstrap", service: "IAssetService" },
+  { name: "Event",   pri: 1200, deps: [],           startup: "Bootstrap", service: "IEventService" },
+  { name: "Demo",    pri: 100,  deps: ["Config", "Asset"], startup: "Deferred", service: "IDemoGreetingService（动态登记）" }
+];
+var topoState = { enabled: {}, cycle: false };
+MODULES.forEach(function (m) { topoState.enabled[m.name] = true; });
+
+function topoResolve(list) {
+  /* 与 ModuleDependencyResolver 相同的算法：Priority+Name 种子序 + DFS 后序输出 */
+  var byName = {}, names = [];
+  list.forEach(function (m) {
+    if (byName[m.name.toLowerCase()]) throw { kind: "dup", msg: "模块名重复: " + m.name };
+    byName[m.name.toLowerCase()] = m; names.push(m);
+  });
+  var seeds = list.slice().sort(function (a, b) { return a.pri - b.pri || (a.name < b.name ? -1 : 1); });
+  var result = [], visited = {}, visiting = {};
+  function visit(m, path) {
+    var key = m.name.toLowerCase();
+    if (visiting[key]) throw { kind: "cycle", msg: "模块依赖成环: " + path.concat(m.name).join(" -> ") };  // 先查 visiting（修正语义）
+    if (visited[key]) return;
+    visiting[key] = true; path.push(m.name);
+    m.deps.forEach(function (d) {
+      var dep = byName[d.toLowerCase()];
+      if (!dep) throw { kind: "missing", msg: "模块 " + m.name + " 声明的依赖 [" + d + "] 未在扫描结果中找到" };
+      visit(dep, path);
+    });
+    path.pop(); delete visiting[key]; visited[key] = true;
+    result.push(m);
+  }
+  seeds.forEach(function (m) { visit(m, []); });
+  return result;
+}
+
+(function initTopo() {
+  var holder = $("#topo-modules"), resultBox = $("#topo-result"), logBox = $("#topo-log");
+  function renderChecks() {
+    holder.innerHTML = "";
+    MODULES.forEach(function (m) {
+      var label = el("label", { class: "switch" }, [
+        el("input", { type: "checkbox", checked: topoState.enabled[m.name] ? "checked" : null }),
+        el("span", { class: "track" })
+      ]);
+      label.addEventListener("change", function () { topoState.enabled[m.name] = this.querySelector("input").checked; });
+      holder.appendChild(el("span", { class: "chip", style: "cursor:pointer;padding:4px 12px" }, [
+        label,
+        el("span", { text: m.name + (m.deps.length ? " ⇐ " + m.deps.join(",") : ""), style: "font-family:var(--mono);font-size:11.5px" }),
+        el("span", { class: "badge " + (m.startup === "Deferred" ? "b-amber" : "b-blue"), text: m.startup, style: "margin-left:4px" })
+      ]));
+    });
+  }
+  function resolve() {
+    logBox.innerHTML = ""; resultBox.innerHTML = "";
+    var work = MODULES.filter(function (m) {
+      if (!topoState.enabled[m.name]) return false;
+      if (m.startup === "Deferred" && !$("#topo-deferred").checked) return false;
+      return true;
+    }).map(function (m) {
+      return { name: m.name, pri: m.pri, deps: m.deps.slice(), startup: m.startup, service: m.service };
+    });
+    if (topoState.cycle) {
+      var net = work.find(function (m) { return m.name === "Network"; });
+      var evt = work.find(function (m) { return m.name === "Event"; });
+      if (net && evt) { net.deps = ["Event"]; evt.deps = ["Network"]; }
+    }
+    var bootstrap = work.filter(function (m) { return m.startup === "Bootstrap"; });
+    var deferred = work.filter(function (m) { return m.startup === "Deferred"; });
+    /* 与真实管理器一致：依赖解析始终针对全量模块集（Bootstrap 已装配的模块可被 Deferred 依赖），
+       每阶段只装配属于该阶段且尚未装配的模块 */
+    var fullOrder;
+    try { fullOrder = topoResolve(work); } catch (e) { fullOrder = null; showErr(e); }
+    function showErr(e) {
+      dlog(logBox, "err", "✗ GameModuleException: " + e.msg);
+      resultBox.appendChild(el("div", { class: "callout danger", html: '<div class="callout-title">GameModuleException</div>' + esc(e.msg) }));
+    }
+    function phase(title, list, scopeParent) {
+      dlog(logBox, "acc", "── " + title);
+      dlog(logBox, "info", "全量种子序（Priority 升序，含其他阶段）= " + work.slice().sort(function (a, b) { return a.pri - b.pri || (a.name < b.name ? -1 : 1); }).map(function (m) { return m.name + "(" + m.pri + ")"; }).join(" → ") + (title.indexOf("Bootstrap") >= 0 ? " ← Demo 是首个种子，把 Asset→Config 拉到最前" : ""));
+      var order = fullOrder.filter(function (m) { return list.some(function (x) { return x.name === m.name; }); });
+      var chain = [scopeParent].concat(order.map(function (m) { return m.name; }));
+      dlog(logBox, "ok", "装配顺序：" + order.map(function (m, i) { return (i + 1) + "." + m.name; }).join(" → "));
+      dlog(logBox, "info", "作用域链：" + chain.join(" → "));
+      order.forEach(function (m, i) {
+        resultBox.appendChild(el("div", { style: "display:flex;gap:8px;align-items:center;padding:5px 10px;border-bottom:1px dashed var(--border);font-size:13px" }, [
+          el("span", { class: "badge b-gray", text: "#" + (i + 1) }),
+          el("code", { text: m.name }),
+          el("span", { class: "badge " + (m.startup === "Deferred" ? "b-amber" : "b-blue"), text: m.startup }),
+          el("span", { text: m.service, style: "color:var(--text-faint);font-size:12px;margin-left:auto" })
+        ]));
+      });
+      return chain[chain.length - 1];
+    }
+    if (fullOrder) {
+      try {
+        var tail = "Root";
+        if (bootstrap.length) tail = phase("Bootstrap 阶段（InitializeBootstrapModulesAsync）", bootstrap, "Root");
+        if (deferred.length) phase("Deferred 阶段（EnterGame 流程，InstallDeferredModulesAsync）", deferred, tail);
+        dlog(logBox, "ok", "✓ 全部模块 Started，Tick 泵开始向它们分发 OnTick");
+      } catch (e) { showErr(e); }
+    }
+  }
+  $("#topo-run").addEventListener("click", resolve);
+  $("#topo-reset").addEventListener("click", function () {
+    topoState.cycle = false;
+    MODULES.forEach(function (m) { topoState.enabled[m.name] = true; });
+    renderChecks(); resultBox.innerHTML = ""; logBox.innerHTML = "";
+    dlog(logBox, "info", "已重置为仓库真实模块配置");
+  });
+  $("#topo-cycle").addEventListener("click", function () {
+    topoState.cycle = true;
+    dlog(logBox, "warn", "已让 Network ⇄ Event 互相依赖（真实仓库中两者都无依赖）。提示：v0.1 真实源码遇环会栈溢出（见 §2.5 发现），模拟器按修正语义给出成环路径");
+  });
+  renderChecks();
+  dlog(logBox, "info", "预置 7 个真实模块（6 个 Bootstrap 桥接 + Demo Deferred）。点击「求解装配顺序」");
+})();
+
+/* ================= 服务注册表演示 ================= */
+(function initSvc() {
+  var log = $("#svc-log"), central = $("#svc-central");
+  var registry = {};   // type -> [{owner}]
+  var waiterPending = false;
+  function renderCentral() {
+    var keys = Object.keys(registry);
+    central.innerHTML = keys.length
+      ? keys.map(function (k) { return registry[k].map(function (e) { return esc(k) + ' <span class="badge b-teal">' + esc(e.owner) + "</span>"; }).join("<br>"); }).join("<br>")
+      : "（空）";
+  }
+  function fire(kind, type, owner) { dlog(log, "acc", "ServiceChanged: " + kind + "  " + type + (owner ? "  (owner=" + owner + ")" : "")); }
+  $("#svc-wait").addEventListener("click", function () {
+    if (waiterPending) { dlog(log, "warn", "等待者已挂起（UniTaskCompletionSource 未完成）"); return; }
+    waiterPending = true;
+    dlog(log, "info", "WaitServiceAsync&lt;IDemoGreetingService&gt;()：两级查找未命中 → 挂起等待 ServiceChanged");
+    dlog(log, "info", "└ 防御：订阅事件后立即二次检查，避免「登记发生在查与订阅之间」的竞态");
+  });
+  $("#svc-install").addEventListener("click", function () {
+    dlog(log, "info", "EnterGame 流程 → InstallDeferredModulesAsync() 装配 Demo 模块");
+    dlog(log, "info", "DemoModule.OnStartAsync() → RegisterService(new DemoGreetingService())");
+    registry["IDemoGreetingService"] = [{ owner: "Demo" }];
+    fire("Added", "IDemoGreetingService", "Demo");
+    renderCentral();
+    if (waiterPending) {
+      waiterPending = false;
+      dlog(log, "ok", "✓ 等待者被唤醒：GetService&lt;IDemoGreetingService&gt;() → DemoGreetingService.SayHello(\"GameFrameY\")");
+      dlog(log, "ok", "└ 返回 \"Hello, GameFrameY! 模块装配 → 服务发现 → 解析 全链路 OK\"");
+    } else {
+      dlog(log, "dim", "（当前没有挂起的等待者）");
+    }
+  });
+  $("#svc-get").addEventListener("click", function () {
+    dlog(log, "info", "GetService&lt;IConfigService&gt;()：");
+    dlog(log, "info", "└ 第 1 级 中央注册表：未命中（Config 模块走 Installer 注册，不进中央表）");
+    dlog(log, "ok", "└ 第 2 级 根容器兜底 TryResolve：命中 IConfigService → ConfigService（ConfigModuleInstaller 注册）");
+  });
+  $("#svc-unload").addEventListener("click", function () {
+    if (!registry["IDemoGreetingService"]) { dlog(log, "warn", "Demo 模块尚未装配"); return; }
+    dlog(log, "info", "ShutdownAsync() 逆序卸载 → ServiceRegistry.UnregisterAll(\"Demo\")");
+    delete registry["IDemoGreetingService"];
+    fire("Removed", "IDemoGreetingService", "Demo");
+    renderCentral();
+    dlog(log, "warn", "此后 GetService&lt;IDemoGreetingService&gt;() 抛 ServiceRegistryException；新的 WaitServiceAsync 会重新挂起");
+  });
+  renderCentral();
+  dlog(log, "info", "中央表当前为空；六桥接模块的服务都在根容器侧（右栏）。试试先点「等待者」再「装配 Demo」");
+})();
+</script>
+</body>
+</html>

@@ -45,6 +45,22 @@
         <var name="name" type="string"/>
     </bean>
 
+    <!-- ==================== 消消乐 ==================== -->
+
+    <bean name="Match3Level" comment="消消乐关卡">
+        <var name="id" type="int" comment="关卡ID"/>
+        <var name="targetScore" type="int" comment="目标分数"/>
+        <var name="moveCount" type="int" comment="可用步数"/>
+        <var name="rowCount" type="int" comment="行数（自下而上）"/>
+        <var name="columnCount" type="int" comment="列数"/>
+        <var name="colorCount" type="int" comment="宝石颜色数 3-6"/>
+    </bean>
+
+    <bean name="Match3Const" comment="消消乐全局参数">
+        <var name="baseScore" type="int" comment="每颗宝石基础分"/>
+        <var name="shuffleWhenNoMove" type="bool" comment="无可消时自动洗牌"/>
+    </bean>
+
     <!-- ==================== 表 ==================== -->
     <!-- group: c=客户端  s=服务端；未标注 group 的表默认 c+s 全端导出 -->
 
@@ -52,4 +68,6 @@
     <table name="TbGlobal" value="GlobalConfig" mode="one" input="global.json" comment="全局配置"/>
     <table name="TbServerList" value="ServerInfo" input="*@serverlist.json" comment="服务器列表"/>
     <table name="TbRobotName" value="RobotName" input="*@robotname.json" group="s" comment="机器人名（仅服务端）"/>
+    <table name="TbMatch3Level" value="Match3Level" input="*@match3level.json" group="c" comment="消消乐关卡（仅客户端）"/>
+    <table name="TbMatch3Const" value="Match3Const" mode="one" input="match3const.json" group="c" comment="消消乐参数（仅客户端）"/>
 </module>

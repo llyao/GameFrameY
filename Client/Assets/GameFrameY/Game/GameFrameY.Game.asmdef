@@ -4,6 +4,8 @@
     "references": [
         "VContainer",
         "UniTask.Runtime",
+        "UnityEngine.UI",
+        "YooAsset.Runtime",
         "GameFrameY.Core",
         "GameFrameY.Bridge",
         "GameFrameY.Config"

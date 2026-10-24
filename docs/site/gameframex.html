@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>02 GameFrameX · 组件底座 — GameFrameY 模块说明系列</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-page="gameframex.html">
+<aside class="sidebar" id="sidebar"></aside>
+<div class="main">
+<main class="content">
+
+<header class="hero">
+  <span class="chapter">CH.02 · 组件底座</span>
+  <h1>GameFrameX 组件族 — 宿主自举与基础组件</h1>
+  <p class="lede">GameFrameX（<code>com.gameframex.unity.*</code>，MIT/Apache-2.0 双许可）是本框架的组件底座：<strong>零配置自举</strong>的组件宿主 <code>[GameFrameX]</code> 在 AfterSceneLoad 自动创建，13 个组件按 Order 挂载，无需在场景里摆任何东西。本章讲底座包 + Event / FSM / Procedure / Setting / Mono 五个基础组件。</p>
+  <div class="hero-facts">
+    <span class="chip acc">com.gameframex.unity 3.0.1</span>
+    <span class="chip">event 2.0 · fsm 2.0 · procedure 2.0 · setting 2.0 · mono 2.0</span>
+    <span class="chip">依赖：litjson / readassets / unitask</span>
+  </div>
+</header>
+
+<h2 id="host">1 宿主自举：[GameFrameX] 是怎么来的</h2>
+<p>理解所有 GameFrameX 包的前提：<strong>每个包提供一个 <code>GameFrameworkComponent</code> 子类，全部挂在自动创建的常驻宿主 <code>[GameFrameX]</code> GameObject 上</strong>。自举分三个阶段（<code>GameFrameXRuntimeBootstrap.cs</code>）：</p>
+<ol>
+  <li><code>[RuntimeInitializeOnLoadMethod(SubsystemRegistration)]</code> → <code>Reset()</code>：重置宿主/贡献者/Options 静态状态（兼容关闭 Domain Reload 的重复 Play）；</li>
+  <li><code>[RuntimeInitializeOnLoadMethod(BeforeSceneLoad)]</code> → <code>ClaimAutoInjection()</code> 宣告自动注入接管（此后场景里<strong>手工摆放</strong>的 GFX 组件会在 Awake 中自我抑制并告警），并应用 Options 贡献者；</li>
+  <li><code>[RuntimeInitializeOnLoadMethod(AfterSceneLoad)]</code> → <code>EnsureStarted()</code>：扫描全部 <code>[GameFrameXAutoComponent(order)]</code> 类型 → 创建 <code>[GameFrameX]</code> GameObject（先 <code>SetActive(false)</code>、Play 模式下 <code>DontDestroyOnLoad</code>，按 Order 升序 AddComponent 后再激活）+ <code>GameFrameworkEntry.InstantiateAllModules()</code> 兜底创建模块实例。</li>
+</ol>
+
+<p>各组件挂载顺序由 <code>GameFrameXAutoComponentAttribute.Order</code> 决定（越小越早，Awake 顺序即生效顺序）：</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Order</th><th>组件</th><th>所属包</th><th>一句话职责</th></tr></thead>
+  <tbody>
+    <tr><td>-10000</td><td><code>BaseComponent</code></td><td>底座</td><td>帧率/游戏速度/后台运行；初始化 5 个 Helper；<strong>每帧驱动 GameFrameworkEntry.Update（全框架心跳源）</strong></td></tr>
+    <tr><td>-9000</td><td><code>ReferencePoolComponent</code></td><td>底座</td><td>引用池（EventArgs/FSM 均走此池）</td></tr>
+    <tr><td>-8000</td><td><code>ObjectPoolComponent</code></td><td>底座</td><td>对象池（UI 实例池等）</td></tr>
+    <tr><td>-7000</td><td><code>EventComponent</code></td><td>event</td><td>事件总线门面</td></tr>
+    <tr><td>-6000</td><td><code>FsmComponent</code></td><td>fsm</td><td>状态机门面；FixedUpdate 驱动 FSM</td></tr>
+    <tr><td>-5000</td><td><code>SettingComponent</code></td><td>setting</td><td>持久化设置；Start 时 Load()</td></tr>
+    <tr><td>-4000</td><td><code>AssetComponent</code></td><td>asset</td><td>资源（YooAsset）</td></tr>
+    <tr><td>-4000</td><td><code>SceneComponent</code></td><td>scene</td><td>场景（YooAsset）</td></tr>
+    <tr><td>-1000</td><td><code>ProcedureComponent</code></td><td>procedure</td><td>流程管理（内部建 FSM）</td></tr>
+    <tr><td>700</td><td><code>LocalizationComponent</code></td><td>localization</td><td>本地化字典（见 06 章）</td></tr>
+    <tr><td>900</td><td><code>MonoComponent</code></td><td>mono</td><td>MonoBehaviour 生命周期桥</td></tr>
+    <tr><td>1000</td><td><code>NetworkComponent</code></td><td>network</td><td>通道制网络（见 05 章）</td></tr>
+    <tr><td>1400</td><td><code>UIComponent</code></td><td>ui</td><td>UI 管理（见 04 章）</td></tr>
+  </tbody>
+</table></div>
+
+<div class="demo">
+  <div class="demo-header"><span class="demo-tag">ANIMATION</span>宿主自举动画
+    <span style="margin-left:auto"><button class="btn sm primary" id="host-play">▶ 播放自举过程</button><button class="btn sm" id="host-reset">↺ 重置</button></span>
+  </div>
+  <div class="demo-body">
+    <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
+      <div style="flex:1;min-width:280px">
+        <div id="host-stage" style="border:2px dashed var(--border-strong);border-radius:12px;min-height:150px;padding:12px;position:relative">
+          <div style="text-align:center;color:var(--text-faint);font-size:12.5px;padding-top:48px" id="host-empty">Hierarchy（空场景）</div>
+        </div>
+        <div style="font-size:11.5px;color:var(--text-faint);margin-top:6px;font-family:var(--mono)" id="host-phase">阶段：待播放</div>
+      </div>
+      <div style="flex:1;min-width:280px">
+        <div style="font-size:12px;font-weight:700;color:var(--text-faint);margin-bottom:6px">组件挂载队列（按 Order 升序）</div>
+        <div id="host-queue" style="display:flex;flex-direction:column;gap:4px;font-family:var(--mono);font-size:12px"></div>
+      </div>
+    </div>
+    <div class="demo-log" id="host-log"></div>
+  </div>
+</div>
+
+<h2 id="base">2 底座包的关键设施</h2>
+
+<h3>2.1 GameEntry — 组件注册表</h3>
+<pre class="codeblock"><code data-lang="cs">public static class GameEntry
+{
+    public static T GetComponent&lt;T&gt;() where T : GameFrameworkComponent;  // 自研桥接服务的取组件方式
+    public static GameFrameworkComponent GetComponent(Type type);
+    public static GameFrameworkComponent GetComponent(string typeName);   // 匹配 FullName 或 Name
+    public static void Shutdown(ShutdownType shutdownType);              // None=仅清组件 / Restart=重载场景 / Quit
+}</code></pre>
+<div class="code-caption">Runtime/Base/GameEntry.cs — 每个组件在 Awake 中注册进 GameEntry 并登记 Manager 模块</div>
+
+<h3>2.2 GameFrameworkEntry — 模块容器与心跳</h3>
+<p><code>BaseComponent.Update</code> 是全框架唯一每帧入口：<code>BaseComponent.Update → GameFrameworkEntry.Update → 各 IUpdatableModule</code>（Event 队列分发、FSM OnUpdate、Mono Update 监听器…）。模块按 <code>IPrioritizedModule.Priority</code> 注册序轮询；框架关闭时逆序 Shutdown，<code>Application.lowMemory</code> 会通知 <code>ILowMemoryAwareModule</code>。</p>
+
+<h3>2.3 BaseComponent — Inspector 可配项</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th>序列化字段</th><th>默认值</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td><code>m_JsonHelperTypeName</code></td><td><code>GameFrameX.Runtime.LitJsonHelper</code></td><td>框架默认 JSON 实现走 LitJson（反射 Activator 创建后注入 <code>Utility.Json</code>）</td></tr>
+    <tr><td><code>m_TextHelper / m_VersionHelper / m_LogHelper / m_CompressionHelper</code></td><td>Default*Helper</td><td>文本/版本/日志/压缩 Helper，可换实现</td></tr>
+    <tr><td><code>m_FrameRate / m_GameSpeed</code></td><td>30 / 1</td><td>对应 <code>Application.targetFrameRate</code> 与 <code>Time.timeScale</code></td></tr>
+    <tr><td><code>m_RunInBackground / m_NeverSleep</code></td><td>true / true</td><td>后台运行 / 屏幕不休眠</td></tr>
+  </tbody>
+</table></div>
+<p>另有运行时属性：<code>FrameRate / GameSpeed / IsGamePaused / PauseGame() / ResumeGame()</code> 等。</p>
+
+<h3>2.4 GameFrameXOptions — 启动配置的唯一入口</h3>
+<pre class="codeblock"><code data-lang="cs">GameFrameXOptions.Configure(new AssetOptions { GamePlayMode = EPlayMode.EditorSimulateMode });
+GameFrameXOptions.Configure(new ProcedureOptions { UseStartupRunner = true });
+GameFrameXOptions.TryGet&lt;AssetOptions&gt;(out var opts);   // 组件 Awake 消费；命中与否都标记"已消费"
+GameFrameXOptions.Reset();                               // 框架 Reset 时清空</code></pre>
+<div class="callout warn">
+  <div class="callout-title">时序约束</div>
+  <p><code>Configure</code> 必须发生在 BeforeSceneLoad（组件首次 <code>TryGet</code> 消费前）；模块已消费后再 Configure 会抛 <code>GameFrameworkException</code>。标了 <code>[GameFrameXStartupOnly]</code> 的字段运行期写入会被拒绝并告警。这就是自研层 <code>GameFrameYStartup.Bootstrap()</code> 抢在建根作用域前先 Configure 的原因。</p>
+</div>
+
+<h2 id="event">3 Event 包 — 字符串 ID 事件总线</h2>
+<p>基于底座 <code>EventPool&lt;T&gt;</code>（ConcurrentQueue + 多播字典），线程安全 Fire、<strong>下一帧主线程分发</strong>。事件模式为 <code>AllowNoHandler | AllowMultiHandler</code>：无订阅者不报错、同 ID 可挂多个 handler。</p>
+
+<div class="table-wrap"><table>
+  <thead><tr><th>API（EventComponent）</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td><code>CheckSubscribe(id, handler)</code></td><td><strong>幂等订阅</strong>：不存在才 Subscribe（组件层没有裸 Subscribe，裸订阅同 handler 会因多播被回调多次）</td></tr>
+    <tr><td><code>CheckUnsubscribe(id, handler)</code></td><td>存在才退订</td></tr>
+    <tr><td><code>Unsubscribe(id, handler)</code></td><td>直接退订</td></tr>
+    <tr><td><code>Fire(object sender, string eventId)</code></td><td>空参数事件（内部 <code>EmptyEventArgs.Create(eventId)</code>，走引用池）</td></tr>
+    <tr><td><code>Fire(object sender, GameEventArgs e)</code></td><td>线程安全：入队，<strong>下一帧 Update 分发</strong></td></tr>
+    <tr><td><code>FireNow(object sender, GameEventArgs e)</code></td><td>立即同步分发（非线程安全）</td></tr>
+    <tr><td><code>Check(id, handler)</code> / <code>Count(id)</code></td><td>查询</td></tr>
+    <tr><td><code>SetDefaultHandler(handler)</code></td><td>无订阅者时的兜底 handler</td></tr>
+  </tbody>
+</table></div>
+<p>字符串 ID 即路由键，约定用 <code>typeof(XxxEventArgs).FullName</code>（如 <code>OnApplicationFocusChangedEventArgs.EventId</code>）；本仓库自研层只用了一个常量：<code>"GameFrameY.GameReady"</code>。自定义事件类继承 <code>GameEventArgs</code> 并实现 <code>Id</code> 与 <code>Clear()</code>（引用池回收时清状态）。</p>
+
+<div class="demo">
+  <div class="demo-header"><span class="demo-tag">SIMULATOR</span>事件总线：Fire 入队 → 下一帧分发</div>
+  <div class="demo-body">
+    <div class="demo-controls">
+      <button class="btn sm" id="ev-sub">📝 CheckSubscribe("GameFrameY.GameReady", HandlerA)</button>
+      <button class="btn sm" id="ev-sub2">📝 再订阅一次 HandlerA（观察幂等）</button>
+      <button class="btn sm primary" id="ev-fire">🔥 Fire(this, "GameFrameY.GameReady")</button>
+      <button class="btn sm" id="ev-frame">⏭ 跑一帧（BaseComponent.Update）</button>
+      <button class="btn sm" id="ev-reset">↺ 重置</button>
+    </div>
+    <div class="grid cols-2">
+      <div>
+        <div style="font-size:12px;font-weight:700;color:var(--text-faint);margin-bottom:6px">订阅表（多播字典）</div>
+        <div class="info-panel" id="ev-subs" style="margin-top:0;min-height:70px;font-family:var(--mono);font-size:12.5px">（无订阅）</div>
+      </div>
+      <div>
+        <div style="font-size:12px;font-weight:700;color:var(--text-faint);margin-bottom:6px">事件队列（ConcurrentQueue，Fire 只入队）</div>
+        <div class="info-panel" id="ev-queue" style="margin-top:0;min-height:70px;font-family:var(--mono);font-size:12.5px">（空）</div>
+      </div>
+    </div>
+    <div class="demo-log" id="ev-log"></div>
+  </div>
+</div>
+
+<h2 id="fsm">4 FSM 包 — 泛型有限状态机</h2>
+<p>每个 Owner 类型可建多台（可命名）状态机；状态带完整生命周期与 <strong>string → Variable 黑板</strong>。Procedure 包就建在它上面。</p>
+<pre class="codeblock"><code data-lang="cs">// 创建一台状态机（FsmComponent 门面）
+IFsm&lt;Player&gt; fsm = GameEntry.GetComponent&lt;FsmComponent&gt;().CreateFsm(player,
+    new IdleState(), new MoveState(), new AttackState());
+fsm.Start&lt;IdleState&gt;();                    // 只能 Start 一次；重跑需 Reset()
+
+// 状态基类
+public class MoveState : FsmState&lt;Player&gt;
+{
+    protected override void OnInit(IFsm&lt;Player&gt; fsm) { }
+    protected override void OnEnter(IFsm&lt;Player&gt; fsm) { }
+    protected override void OnUpdate(IFsm&lt;Player&gt; fsm, float elapse, float realElapse) { }
+    protected override void OnLeave(IFsm&lt;Player&gt; fsm, bool isShutdown) { }
+    protected void ChangeState&lt;TState&gt;(IFsm&lt;Player&gt; fsm);   // 内部：OnLeave → 切换 → OnEnter（同步完成）
+}
+
+// 黑板（值经 Variable 包装：VarInt32 / VarString / …）
+fsm.SetData("HP", VarInt32.Create(100));
+int hp = fsm.GetData&lt;VarInt32&gt;("HP").Value;</code></pre>
+<div class="code-caption">要点：OnUpdate 由 GameFrameworkEntry.Update 驱动、OnFixedUpdate 由 FsmComponent.FixedUpdate 驱动；FSM 对象本身走引用池</div>
+
+<p>其他能力：<code>HasState/GetState/GetAllStates</code>、运行期 <code>AddState/RemoveState</code>、<code>fsm.Reset()</code>（退出当前态、清黑板、可重新 Start）、<code>CurrentStateTime</code>（当前态停留时长）。<code>ChangeState</code> 校验目标状态存在，不存在抛异常。</p>
+
+<h2 id="procedure">5 Procedure 包 — 流程管理（FSM 的应用）</h2>
+<p><code>ProcedureManager</code> 内部创建一台 <code>IFsm&lt;IProcedureManager&gt;</code>，流程类即状态（<code>ProcedureBase : FsmState&lt;IProcedureManager&gt;</code>）。本项目没有走组件默认的"反射建流程"路径：</p>
+<pre class="codeblock"><code data-lang="cs">// GameFrameYStartup 注入：流程由我们的启动协调器自管
+GameFrameXOptions.Configure(new ProcedureOptions { UseStartupRunner = true });
+
+// GameFrameYGameLauncher 里（代码建流程，不依赖 Inspector 类型名列表）
+var procedures = new ProcedureBase[] { launch, patch, loadConfig, enterGame };
+procedureComponent.ReinitializeProcedures(procedures, launch);   // Destroy + 重建 FSM
+procedureComponent.Procedure.StartProcedure(launch.GetType());</code></pre>
+<div class="callout info">
+  <div class="callout-title">UseStartupRunner = true 的含义</div>
+  <p><code>ProcedureComponent.Start()</code> 协程直接 <code>yield break</code>——组件只负责 Awake 注册 <code>IProcedureManager</code>，Initialize + StartProcedure 由外部（本项目即 <code>GameFrameYGameLauncher</code>）接管，避免重复 Initialize 报 "Already exist FSM"。为 false（默认）时走旧路径：按 Inspector 的 <code>m_AvailableProcedureTypeNames</code> 反射建流程并自动启动。</p>
+</div>
+<p>常用 API：<code>CurrentProcedure / CurrentProcedureTime / HasProcedure&lt;T&gt;() / GetProcedure&lt;T&gt;() / DestroyProcedures()</code>。流程内跳转用 <code>ChangeState&lt;TState&gt;(fsm)</code>（自研层封装为 <code>GoTo&lt;T&gt;()</code>）。</p>
+
+<h2 id="setting">6 Setting 包 — 键值持久化设置</h2>
+<pre class="codeblock"><code data-lang="cs">var setting = GameEntry.GetComponent&lt;SettingComponent&gt;();
+setting.SetInt("Audio.Volume", 80);
+setting.SetBool("FirstLaunch", false);
+setting.SetObject("Player.Preferences", new Preferences());   // 对象经 Utility.Json(LitJson) 序列化为 string
+setting.Save();                                               // 显式落盘（SetXxx 只写内存！框架关闭时也会自动 Save）
+int v = setting.GetInt("Audio.Volume", defaultValue: 100);    // 每种类型都有带默认值重载</code></pre>
+<div class="table-wrap"><table>
+  <thead><tr><th>项</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>支持类型</td><td><code>bool / int / float / string / 任意 class + new()</code>（对象走 JSON）</td></tr>
+    <tr><td>默认后端</td><td><code>PlayerPrefsSettingHelper → ISettingStorageBackend → Unity PlayerPrefs</code>（bool 存为 int 0/1；Editor 恒用 PlayerPrefs）</td></tr>
+    <tr><td>备选后端</td><td><code>DefaultSettingHelper</code>：全量内存字典 → 文件 <code>persistentDataPath/GameFrameworkSetting.dat</code>（GameFrameworkSerializer 加密流）</td></tr>
+    <tr><td>渠道扩展</td><td>真机可注册小游戏渠道后端（<code>SettingStorageBackendFactory</code> 保留首个注册，未注册回落 PlayerPrefs）</td></tr>
+    <tr><td>消费方</td><td>Localization 用它持久化语言（键 <code>LocalizationComponent.Language</code>，见 06 章）</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="mono">7 Mono 包 — MonoBehaviour 生命周期桥</h2>
+<p>让纯 C# 模块/服务（无 GameObject）也能挂每帧逻辑，并把应用前后台切换转成事件总线的两个标准事件：</p>
+<pre class="codeblock"><code data-lang="cs">var mono = GameEntry.GetComponent&lt;MonoComponent&gt;();
+mono.AddUpdateListener((dt, unscaledDt) =&gt; { /* 每帧 */ });
+mono.AddFixedUpdateListener((fdt, _) =&gt; { /* 物理帧 */ });
+mono.AddLateUpdateListener((dt, _) =&gt; { /* 后期帧 */ });
+mono.AddOnApplicationPauseListener(paused =&gt; { /* true=进后台 */ });
+mono.AddOnApplicationFocusListener(focused =&gt; { });
+// 移除：RemoveXxxListener；null 回调会被拒绝并 Log.Fatal</code></pre>
+<p>Focus/Pause 同时会 <code>Fire</code> <code>OnApplicationFocusChangedEventArgs / OnApplicationPauseChangedEventArgs</code>（ID = 类型 FullName，带 <code>IsFocus/IsPause</code> 字段），可在事件总线上订阅。内部是 6 条 LinkedList + lock + 快照调用。</p>
+
+<h2 id="deps">8 包间依赖小结</h2>
+<pre class="codeblock"><code data-lang="text">com.gameframex.unity（底座：GameEntry/宿主/Options/EventPool/引用池/Utility）
+├─ event（asmdef 引用底座）            ← 被 mono/scene/asset/network/localization/ui 消费
+├─ fsm（程序集级依赖底座）              ← 被 procedure 强依赖
+├─ setting（依赖底座）                  ← 被 localization 消费
+├─ mono（依赖 event + 底座）
+└─ 本仓库 com.gameframey.core：
+     GameFrameYStartup 用 GameFrameXOptions.Configure(Asset/Scene/Procedure Options)
+     GameFrameYGameLauncher 用 ReinitializeProcedures(四流程)
+     六桥接服务用 GameEntry.GetComponent&lt;XxxComponent&gt;() 惰性取组件</code></pre>
+
+<footer class="pagenav"></footer>
+</main>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+/* ================= 宿主自举动画 ================= */
+(function initHost() {
+  var COMPS = [
+    ["BaseComponent", -10000, "底座"], ["ReferencePoolComponent", -9000, "底座"], ["ObjectPoolComponent", -8000, "底座"],
+    ["EventComponent", -7000, "event"], ["FsmComponent", -6000, "fsm"], ["SettingComponent", -5000, "setting"],
+    ["AssetComponent", -4000, "asset"], ["SceneComponent", -4000, "scene"], ["ProcedureComponent", -1000, "procedure"],
+    ["LocalizationComponent", 700, "localization"], ["MonoComponent", 900, "mono"], ["NetworkComponent", 1000, "network"], ["UIComponent", 1400, "ui"]
+  ];
+  var stage = $("#host-stage"), queue = $("#host-queue"), log = $("#host-log"), phase = $("#host-phase");
+  var hostGo = null, compList = null, timer = null;
+  function reset() {
+    if (timer) { clearInterval(timer); timer = null; $("#host-play").textContent = "▶ 播放自举过程"; }
+    stage.innerHTML = '<div style="text-align:center;color:var(--text-faint);font-size:12.5px;padding-top:48px">Hierarchy（空场景）</div>';
+    queue.innerHTML = ""; log.innerHTML = ""; phase.textContent = "阶段：待播放";
+    COMPS.forEach(function (c) {
+      queue.appendChild(el("div", { class: "host-q-item", "data-name": c[0], style: "display:flex;gap:8px;align-items:center;padding:3px 8px;border:1px solid var(--border);border-radius:6px;color:var(--text-faint);opacity:.55" }, [
+        el("span", { class: "badge b-gray", text: String(c[1]) }),
+        el("span", { text: c[0], style: "flex:1" }),
+        el("span", { class: "badge b-amber", text: c[2] })
+      ]));
+    });
+    hostGo = null; compList = null;
+  }
+  function phaseLog(p, msg, kind) { phase.textContent = "阶段：" + p; dlog(log, kind || "info", msg); }
+  function play() {
+    if (timer) return;
+    reset();
+    var step = 0;
+    var steps = [
+      function () { phaseLog("SubsystemRegistration", "GameFrameXRuntimeBootstrap.Reset()：清宿主/Options 静态状态（Domain Reload 关闭保护）"); },
+      function () { phaseLog("BeforeSceneLoad", "ClaimAutoInjection()：宣告自动注入接管，场景手摆组件将自我抑制"); },
+      function () {
+        phaseLog("AfterSceneLoad", "EnsureStarted()：创建 [GameFrameX] GameObject（SetActive(false)，Play 下 DontDestroyOnLoad）");
+        hostGo = el("div", { style: "border:1px solid var(--accent);border-radius:8px;padding:6px 10px;margin-bottom:6px;background:var(--accent-soft)" }, [
+          el("div", { style: "font-family:var(--mono);font-weight:700;font-size:13px;color:var(--accent)", text: "[GameFrameX] (DontDestroyOnLoad)" })
+        ]);
+        compList = el("div", { style: "padding-left:18px;display:flex;flex-direction:column;gap:3px" });
+        hostGo.appendChild(compList);
+        stage.innerHTML = ""; stage.appendChild(hostGo);
+      }
+    ];
+    COMPS.forEach(function (c) {
+      steps.push(function () {
+        compList.appendChild(el("div", { style: "font-family:var(--mono);font-size:12px;color:var(--text)" }, [
+          el("span", { class: "badge b-blue", text: String(c[1]) }), " " + c[0] + " — Awake：注册 GameEntry + 注册 Manager 模块"
+        ]));
+        var item = queue.querySelector('[data-name="' + c[0] + '"]');
+        if (item) { item.style.opacity = "1"; item.style.borderColor = "var(--ok)"; item.style.color = "var(--text)"; }
+      });
+    });
+    steps.push(function () { phaseLog("AfterSceneLoad", "宿主 SetActive(true)：13 个组件 Awake 全部生效（按 Order 升序）", "ok"); });
+    steps.push(function () { phaseLog("AfterSceneLoad", "GameFrameworkEntry.InstantiateAllModules()：兜底全量创建模块实例（幂等）", "ok"); });
+    steps.push(function () {
+      phaseLog("运行期", "BaseComponent.Start：初始化 Text/Version/Log/Compression/Json 五个 Helper（Json 默认 LitJsonHelper）", "ok");
+      phaseLog("运行期", "此后 BaseComponent.Update 每帧驱动 GameFrameworkEntry.Update —— 全框架心跳开始", "ok");
+      $("#host-play").textContent = "▶ 播放自举过程"; if (timer) { clearInterval(timer); timer = null; }
+    });
+    $("#host-play").textContent = "⏸ 播放中…";
+    timer = setInterval(function () {
+      if (step >= steps.length) { clearInterval(timer); timer = null; $("#host-play").textContent = "▶ 播放自举过程"; return; }
+      steps[step++]();
+    }, 420);
+  }
+  $("#host-play").addEventListener("click", play);
+  $("#host-reset").addEventListener("click", reset);
+  reset();
+})();
+
+/* ================= 事件总线演示 ================= */
+(function initEv() {
+  var log = $("#ev-log"), subsBox = $("#ev-subs"), queueBox = $("#ev-queue");
+  var subscribed = false, queue = [], frameCount = 0;
+  function render() {
+    subsBox.innerHTML = subscribed
+      ? '"GameFrameY.GameReady" → [ HandlerA ]'
+      : "（无订阅）";
+    queueBox.innerHTML = queue.length
+      ? queue.map(function (q) { return "📦 " + esc(q); }).join("<br>")
+      : "（空）";
+  }
+  $("#ev-sub").addEventListener("click", function () {
+    if (subscribed) { dlog(log, "warn", 'CheckSubscribe：HandlerA 已存在 → 跳过（幂等）'); return; }
+    subscribed = true; render();
+    dlog(log, "ok", 'CheckSubscribe("GameFrameY.GameReady", HandlerA) → 订阅成功');
+  });
+  $("#ev-sub2").addEventListener("click", function () {
+    if (subscribed) dlog(log, "warn", 'CheckSubscribe：HandlerA 已存在 → 跳过（这正是幂等订阅的意义；裸 Subscribe 会挂两次、回调两次）');
+    else { subscribed = true; render(); dlog(log, "ok", "订阅成功"); }
+  });
+  $("#ev-fire").addEventListener("click", function () {
+    queue.push("EmptyEventArgs(GameFrameY.GameReady)");
+    render();
+    dlog(log, "info", 'Fire(this, "GameFrameY.GameReady")：线程安全，只入 ConcurrentQueue，本轮不分发');
+  });
+  $("#ev-frame").addEventListener("click", function () {
+    frameCount++;
+    dlog(log, "acc", "—— 帧 #" + frameCount + "：BaseComponent.Update → GameFrameworkEntry.Update → EventManager.Update");
+    if (!queue.length) { dlog(log, "dim", "└ 队列为空，无事件分发"); return; }
+    while (queue.length) {
+      var q = queue.shift();
+      dlog(log, "info", "└ 出队 " + q + "（用完回引用池 Clear）");
+      if (subscribed) dlog(log, "ok", "   → HandlerA(sender, args) 在主线程被调用 ✓");
+      else dlog(log, "warn", "   → 无订阅者：AllowNoHandler 模式，静默通过（不报错）");
+    }
+    render();
+  });
+  $("#ev-reset").addEventListener("click", function () {
+    subscribed = false; queue = []; frameCount = 0; log.innerHTML = ""; render();
+  });
+  render();
+})();
+</script>
+</body>
+</html>

@@ -10,7 +10,7 @@ GameFrameY/
 │   └── Tools/       #   LubanSource/ 生成器全量源码(v5.1.0) + Luban/ 构建产物 + build-luban/vendor 脚本
 ├── Server/          # GameFrameX.Server 快照（.NET 10，Apache-2.0，来源见 Server/PROVENANCE.md）
 ├── Protobuf/        # proto3 协议（客户端/服务端共用约定）
-├── docs/            # 架构说明 + 第三方源码清单（third-party.md）
+├── docs/            # 架构说明 + 第三方源码清单（third-party.md）+ 交互式模块说明系列（site/，双击 site/index.html 打开）
 └── docker-compose.yml  # MongoDB（服务端依赖）
 ```
 
@@ -37,12 +37,29 @@ GameFrameY/
 [GameFrameY] Luban 配置加载完成：TbItem 6 条，TbServerList 3 条
 [GameFrameY] 模块就绪: Demo (DemoModule)
 [GameFrameY] [Demo] TbItem[10001] = 木剑（新手木剑，聊胜于无）价格 10 品质 White；...
-[GameFrameY] [Demo] Hello, GameFrameY! 模块装配 → 服务发现 → 解析 全链路 OK
+[GameFrameY] 模块就绪: Match3 (Match3Module)
+[GameFrameY] [Match3] 第 1 关开始 8x8 颜色 5，目标 1500 分 / 20 步
 [GameFrameY] GameFrameY 启动流程完成（GameReady）
 [GameFrameY] [Demo] Tick 心跳 #1（每 3 秒一条）
 ```
 
-### 2. 配置工作流
+屏幕上会出现消消乐棋盘：**拖拽或点选两颗相邻宝石交换**，产生三连即消除得分，级联有 Combo 倍率；达到目标分过关（下一关），步数用完失败（重试）。全部 UI/贴图/关卡数据均为程序生成，无任何二进制美术资源。
+
+### 2. 内置示例：消消乐（Match3）
+
+框架的完整实战用例，全链路走框架服务：
+
+- **玩法**：按关卡 8x8~9x9、4~6 色，限步数冲目标分；三连消除、重力下落、顶部补充、级联 Combo 倍率、死局自动洗牌、过关/失败结算面板、重新开始按钮。
+- **代码结构**（`Client/Assets/GameFrameY/Game/Modules/Match3/`）：
+  - `Board/` 棋盘**纯逻辑**（无 Unity 依赖，可单测、可复用到服务端）；
+  - `Match3UI` 运行时构建 UGUI（无 prefab）+ 拖拽/点选双输入 + UniTask 补间动画；
+  - `Match3Assets` 经 **YooAsset** 加载 `Bundles/Atlases` 的宝石贴图，加载失败自动回退程序化生成（保证可玩）；
+  - `Match3GameController` 关卡状态机：计分 = 消除数 × 基础分（**Luban** `TbMatch3Const`）× 级联序号，进度经 **IEventService** 广播。
+- **改关卡**：`Config/Datas/match3level.json` → `Config/gen-client.*` → 回 Unity 即生效。
+- **改美术**：`python tools/gen_match3_art.py`（纯 Python 画 PNG，调色在脚本里）。
+- **回归测试**：`cd tools/Match3BoardSmoke && dotnet run`（随机 300 局 × 400 次交换校验棋盘不变量——首版就抓出过一个越界 bug）。
+
+### 3. 配置工作流
 
 ```bash
 cd Config
@@ -53,7 +70,7 @@ cd Config
 改表：`Config/Defines/schema.xml`（结构）+ `Config/Datas/*.json`（数据）→ 跑 gen → 回 Unity 即生效。
 要求 .NET SDK 8+（工具已随仓库构建在 `Config/Tools/Luban/`）。
 
-### 3. 服务端
+### 4. 服务端
 
 ```bash
 docker compose up -d                 # MongoDB
@@ -71,6 +88,12 @@ cd Server/Config && dotnet build     # 我们的服务端配置库（Luban 生�
 - **流程**：`GameFrameYGameLauncher` 组装 Launch → Patch → LoadConfig → EnterGame 四流程；EnterGame 装配 Deferred 业务模块并广播 `GameFrameY.GameReady`。
 
 详见 [docs/architecture.md](docs/architecture.md)。
+
+## 模块说明系列（交互式文档）
+
+每个包 / 每个模块的详细说明（API、机制、互动演示、真实代码示例）见 [docs/site/index.html](docs/site/index.html)——
+纯静态离线 HTML，双击即开：总览架构图、GameFrameY.Core 模块体系（拓扑排序模拟器）、GameFrameX 组件族、
+Asset/YooAsset、UI/场景、网络、UniTask/VContainer 底座、Luban 配置管线、服务端，共 9 章。目录见 [docs/site/README.md](docs/site/README.md)。
 
 ## 冒烟/排障清单（首次打开工程）
 

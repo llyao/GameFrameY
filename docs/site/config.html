@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>07 Luban · 配置管线 — GameFrameY 模块说明系列</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-page="config.html">
+<aside class="sidebar" id="sidebar"></aside>
+<div class="main">
+<main class="content">
+
+<header class="hero">
+  <span class="chapter">CH.07 · 配置</span>
+  <h1>Luban — 一份定义，双端生成</h1>
+  <p class="lede">配置体系的原则：<strong>定义与数据只有一份</strong>（<code>Config/Defines/schema.xml</code> + <code>Config/Datas/*.json</code>），Luban v5.1.0 按分组生成两端产物——客户端 <code>cfg</code> 命名空间代码 + bytes（走 YooAsset 进包），服务端 <code>GameFrameY.Config</code> + bytes（直接编译）。生成器全量源码也在仓里，改生成逻辑后 <code>build-luban</code> 重出工具。</p>
+  <div class="hero-facts">
+    <span class="chip acc">Luban v5.1.0（生成器源码 vendored）</span>
+    <span class="chip acc">运行时：com.gameframey.luban（ByteBuf）</span>
+    <span class="chip">4 张表 · 2 枚举 · group c/s 过滤</span>
+  </div>
+</header>
+
+<h2 id="pipeline">1 管线全景</h2>
+<pre class="codeblock"><code data-lang="text">Config/
+├── Defines/schema.xml ──┐   Defines/builtin.xml（vector2/3/4 内置类型）
+├── Datas/*.json ────────┤
+└── luban.conf ──────────┤   targets: client(groups:["c"], topModule:cfg) / server(groups:["s"], topModule:GameFrameY.Config)
+                         ▼
+              dotnet Tools/Luban/Luban.dll
+              -t client -c cs-bin -d bin        │      -t server -c cs-bin -d bin
+                         ▼                        ▼
+   Client/Assets/GameFrameY/Config/Generate   Server/Config/Generate
+   （namespace cfg 的 Tables/TbXxx/Item…）      （namespace GameFrameY.Config，含 TbRobotName）
+   Client/Assets/Bundles/Config/*.bytes        Server/Config/Datas/*.bytes
+                         │                        │
+                         ▼                        ▼
+   YooAsset 收集（AddressByFileName）          csproj CopyToOutputDirectory
+   ProcedureLoadConfig → IConfigService        （服务端读取，JSON 热加载体系另见 08 章）
+   → LoadAssetAsync&lt;TextAsset&gt;("tbitem")
+   → new ByteBuf(bytes) → cfg.Tables</code></pre>
+
+<h2 id="conf">2 luban.conf（全文 + 注解）</h2>
+<pre class="codeblock"><code data-lang="json">{
+  "groups": [
+    { "names": ["c"], "default": true },      // c=客户端组；default:true ⇒ 未标 group 的表属于该组
+    { "names": ["s"], "default": true }       // s=服务端组；两个组都 default ⇒ 未标注 = 双端都导出
+  ],
+  "schemaFiles": [
+    { "fileName": "Defines", "type": "" }     // schema 目录；type:"" 用内置 xml 格式（module/bean/table 标签）
+  ],
+  "dataDir": "Datas",                          // 数据根目录；input="*@item.json" 的 * 代表此目录
+  "targets": [
+    { "name": "client", "manager": "Tables", "groups": ["c"], "topModule": "cfg" },
+    { "name": "server", "manager": "Tables", "groups": ["s"], "topModule": "GameFrameY.Config" }
+  ]
+}</code></pre>
+<div class="code-caption">Config/luban.conf — target 决定：分组过滤（表 ∩ 组）+ 生成代码顶层命名空间 + manager 类名</div>
+
+<h2 id="schema">3 schema.xml（全文 + 注解）</h2>
+<pre class="codeblock"><code data-lang="xml">&lt;module name=""&gt;
+    &lt;enum name="ItemQuality"&gt;   &lt;!-- White=0 Green=1 Blue=2 Purple=3 Orange=4 --&gt; &lt;/enum&gt;
+    &lt;enum name="ServerState"&gt;   &lt;!-- Normal=0 Busy=1 Maintain=2 --&gt;              &lt;/enum&gt;
+
+    &lt;bean name="Item" comment="道具配置"&gt;                    &lt;!-- 普通字段 bean --&gt;
+        &lt;var name="id"      type="int"         comment="道具ID"/&gt;   &lt;!-- 首字段自动成为 map 表 key --&gt;
+        &lt;var name="name"    type="string"/&gt;
+        &lt;var name="desc"    type="string"/&gt;
+        &lt;var name="price"   type="int"/&gt;
+        &lt;var name="quality" type="ItemQuality"/&gt;              &lt;!-- 枚举字段：生成代码里是强类型 enum --&gt;
+        &lt;var name="stackable" type="bool"/&gt;
+    &lt;/bean&gt;
+    &lt;bean name="GlobalConfig" comment="全局配置（单例表）"/&gt;
+    &lt;bean name="ServerInfo"   comment="服务器列表"/&gt;
+    &lt;bean name="RobotName"    comment="机器人名字（仅服务端使用，演示 group 过滤）"/&gt;
+
+    &lt;!-- group: c=客户端 s=服务端；未标注默认双端。input 的 * 从 dataDir 取文件 --&gt;
+    &lt;table name="TbItem"       value="Item"        input="*@item.json"      comment="道具表"/&gt;
+    &lt;table name="TbGlobal"     value="GlobalConfig" mode="one" input="global.json" comment="全局配置"/&gt; &lt;!-- mode=one 单例表 --&gt;
+    &lt;table name="TbServerList" value="ServerInfo"  input="*@serverlist.json"/&gt;
+    &lt;table name="TbRobotName"  value="RobotName"   input="*@robotname.json" group="s" comment="机器人名（仅服务端）"/&gt;
+&lt;/module&gt;</code></pre>
+<div class="table-wrap"><table>
+  <thead><tr><th>要点</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>表名 ↔ 数据文件</td><td>由 <code>input</code> 属性显式映射（数据文件名不带 Tb 前缀：<code>TbItem ← item.json</code>）</td></tr>
+    <tr><td>map 模式（默认）</td><td>生成 <code>Dictionary&lt;key,value&gt;</code> + <code>List</code>，key = bean 首字段；<code>GetOrDefault/Get/this[]/DataMap/DataList</code></td></tr>
+    <tr><td>mode="one" 单例</td><td>整表一行（数据文件直接是 JSON 对象非数组）；生成 <code>Data</code> 属性 + 逐字段转发属性</td></tr>
+    <tr><td>group 过滤</td><td>作用于<strong>表与数据</strong>；bean 类不做组过滤——客户端 Generate 目录会残留无引用的 <code>RobotName.cs</code>（无害死代码）</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="groups">4 分组机制（互动）</h2>
+<div class="demo">
+  <div class="demo-header"><span class="demo-tag">INTERACTIVE</span>group 过滤演示：切换表的分组，看两端产物变化
+    <span style="margin-left:auto"><button class="btn sm" id="grp-reset">↺ 恢复仓库真实配置</button></span>
+  </div>
+  <div class="demo-body">
+    <p style="font-size:13px;color:var(--text-soft);margin-top:0">勾选表属于哪个组（真实配置：前三张双端、TbRobotName 仅 s）。右侧实时显示两端会生成什么。</p>
+    <div class="table-wrap" style="margin:8px 0"><table id="grp-table">
+      <thead><tr><th>表</th><th>bean</th><th>模式</th><th style="text-align:center">c（客户端）</th><th style="text-align:center">s（服务端）</th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+    <div class="grid cols-2">
+      <div class="card" style="padding:14px 16px">
+        <div style="font-size:12.5px;font-weight:700;margin-bottom:6px">client target（groups:["c"]）产物</div>
+        <div id="grp-client" style="font-family:var(--mono);font-size:12.3px;line-height:1.8"></div>
+      </div>
+      <div class="card" style="padding:14px 16px">
+        <div style="font-size:12.5px;font-weight:700;margin-bottom:6px">server target（groups:["s"]）产物</div>
+        <div id="grp-server" style="font-family:var(--mono);font-size:12.3px;line-height:1.8"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2 id="browser">5 表数据浏览器（仓库真实数据）</h2>
+<div class="demo">
+  <div class="demo-header"><span class="demo-tag">DATA</span>Datas/*.json 预览（生成 bytes 的源头）</div>
+  <div class="demo-body">
+    <div class="demo-controls">
+      <button class="btn sm primary" data-tbl="TbItem">TbItem（6 条）</button>
+      <button class="btn sm" data-tbl="TbServerList">TbServerList（3 条）</button>
+      <button class="btn sm" data-tbl="TbGlobal">TbGlobal（mode=one）</button>
+      <input type="text" id="dt-search" placeholder="搜索名称/描述…" style="padding:5px 10px;border:1px solid var(--border-strong);border-radius:7px;background:var(--bg);color:var(--text);font-size:12.5px;width:180px">
+    </div>
+    <div class="table-wrap" style="margin-top:8px"><table id="dt-table"><tbody></tbody></table></div>
+    <div style="font-size:12px;color:var(--text-faint)">对应 bytes：tbitem.bytes 223B · tbglobal.bytes 104B · tbserverlist.bytes 92B（Bundles/Config/）</div>
+  </div>
+</div>
+
+<h2 id="scripts">6 生成脚本（全文 + 参数注解）</h2>
+<div class="tabs">
+  <div class="tab-btns"><button class="tab-btn active">gen-client.sh</button><button class="tab-btn">gen-server.sh</button></div>
+  <div class="tab-panel active">
+<pre class="codeblock"><code data-lang="bash">#!/usr/bin/env bash
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LUBAN_DLL="$SCRIPT_DIR/Tools/Luban/Luban.dll"
+
+dotnet "$LUBAN_DLL" \
+    -t client -c cs-bin -d bin \            # target=client；C#+bin 风格代码；二进制数据
+    --conf "$SCRIPT_DIR/luban.conf" \
+    -x "outputCodeDir=../Client/Assets/GameFrameY/Config/Generate" \   # 代码 → cfg（进 Unity）
+    -x "outputDataDir=../Client/Assets/Bundles/Config" \               # bytes → YooAsset 收集目录
+    "$@"                                    # 透传额外参数
+echo "[gen-client] OK"</code></pre>
+  </div>
+  <div class="tab-panel">
+<pre class="codeblock"><code data-lang="bash">#!/usr/bin/env bash
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LUBAN_DLL="$SCRIPT_DIR/Tools/Luban/Luban.dll"
+
+dotnet "$LUBAN_DLL" \
+    -t server -c cs-bin -d bin \            # target=server（groups:["s"]）
+    --conf "$SCRIPT_DIR/luban.conf" \
+    -x "outputCodeDir=../Server/Config/Generate" \    # 代码 → GameFrameY.Config 命名空间
+    -x "outputDataDir=../Server/Config/Datas" \       # bytes → csproj CopyToOutputDirectory
+    "$@"
+echo "[gen-server] OK"</code></pre>
+  </div>
+</div>
+<p>.bat 版本参数一致（多 errorlevel 检查）。参数含义：<code>-t</code> 选 luban.conf 的 target；<code>-c cs-bin</code> = C# 代码 + ByteBuf 二进制序列化风格；<code>-d bin</code> = 数据导出为 .bytes；<code>-x outputCodeDir/outputDataDir</code> = 两个输出目录（本仓只用这两个 -x 变量）。</p>
+
+<h2 id="runtime">7 运行时链路：bytes → cfg.Tables</h2>
+<pre class="codeblock"><code data-lang="cs">// ① 生成的 Tables（节选）：loader 委托按表逻辑名取缓冲
+public Tables(System.Func&lt;string, ByteBuf&gt; loader)
+{
+    TbItem = new TbItem(loader("tbitem"));          // ← 名字 = 属性名小写 = bytes 文件名 = YooAsset 地址
+    TbGlobal = new TbGlobal(loader("tbglobal"));
+    TbServerList = new TbServerList(loader("tbserverlist"));
+    ResolveRef();                                    // 二段式：先建表后解引用（ref/path 校验）
+}
+
+// ② 生成的 bean：逐字段 ReadXxx，全部 readonly（不可变配置对象）
+public Item(ByteBuf _buf)
+{
+    Id = _buf.ReadInt();                  // int
+    Name = _buf.ReadString();             // string（ReadSize 前缀 + UTF8 字节）
+    Desc = _buf.ReadString();
+    Price = _buf.ReadInt();
+    Quality = (ItemQuality)_buf.ReadInt();// enum → ReadInt 强转
+    Stackable = _buf.ReadBool();          // bool
+}
+public const int __ID__ = 2289459;        // Luban 编译期类型哈希（多态 bean 用）
+public override int GetTypeId() =&gt; __ID__;
+
+// ③ 消费（DemoModule）
+var item = config.Tables.TbItem.GetOrDefault(10001);   // map 表
+var url  = config.Tables.TbGlobal.PatchUrl;            // one 表字段转发</code></pre>
+<div class="code-caption">运行时包 com.gameframey.luban 提供 ByteBuf/BeanBase/ITypeId/SimpleJSON；ByteBuf 还有 varint 变长整数、segment 段（多态 bean 前置长度）、TryDeserializeInplaceByteBuf（网络半包）等能力，网络包未来可复用</div>
+
+<h2 id="workflow">8 改表工作流与工具链</h2>
+<div class="callout tip">
+  <div class="callout-title">加一张表 / 改一个字段（标准流程）</div>
+  <ol style="margin:4px 0 0">
+    <li><code>Defines/schema.xml</code>：声明 bean 与 table（决定 group 与 input 文件名）；</li>
+    <li><code>Datas/xxx.json</code>：写数据；</li>
+    <li><code>cd Config &amp;&amp; ./gen-client.sh &amp;&amp; ./gen-server.sh</code>；</li>
+    <li>回 Unity：新表 bytes 出现在 <code>Bundles/Config</code>，ConfigService 反射自动纳入加载（无需改加载代码）；YooAsset Collector 若报 GUID 不匹配，窗口里 Fix（见 03 章）；</li>
+    <li>服务端：<code>Server/Config</code> 重新生成后 <code>dotnet build</code> 即可。</li>
+  </ol>
+</div>
+<p><strong>Tools/ 目录</strong>：</p>
+<ul>
+  <li><code>LubanSource/</code>：Luban v5.1.0 全量源码（net8.0），插件化管线：Luban.Core（类型系统）/ Schema.Builtin（xml）/ DataLoader.Builtin（json/excel/yaml/lua…）/ DataTarget.Builtin（bin/json/bson/lua…）/ 各语言代码插件（C#/TS/Lua/Go/Rust…）/ Protobuf、FlatBuffers、MsgPack 消息方案插件 / Luban.Agent（AI）与 Luban.Mcp。</li>
+  <li><code>Luban/</code>：构建产物（Luban.dll + 全部依赖 + Templates），gen 脚本直接引用——<strong>日常生成不需要构建</strong>。</li>
+  <li><code>build-luban.bat|sh</code>：改了 LubanSource 后重出工具：<code>dotnet build LubanSource/src/Luban/Luban.csproj -c Release -o Luban</code>。</li>
+  <li><code>vendor_packages.py</code>：Unity 包源码化脚本（与 Luban 无关，服务于 Client/Packages）：按 DIRECT 表浅克隆 → 递归补依赖 → Tests/ 改名 Tests~/（避免 Unity 导入测试程序集）。</li>
+  <li><code>_examples/</code>：Luban 官方示例快照（DataTables/MiniTemplate 等，仅参考）。</li>
+</ul>
+<div class="callout info">
+  <div class="callout-title">为什么不用 com.gameframex.unity.focus-creative-games.luban？</div>
+  <p>该包命名空间是 <code>LuBan.Runtime</code>，与 Luban v5 生成代码不兼容；故直接 vendor 了上游 <code>src/Luban.Tests/RuntimeSupport</code> 为 <code>com.gameframey.luban</code>（命名空间 <code>Luban</code>），与双端生成代码配套（package.json 注明）。</p>
+</div>
+
+<footer class="pagenav"></footer>
+</main>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+/* ================= 分组过滤演示 ================= */
+var TABLES = [
+  { name: "TbItem", bean: "Item", mode: "map", c: true, s: true },
+  { name: "TbGlobal", bean: "GlobalConfig", mode: "one", c: true, s: true },
+  { name: "TbServerList", bean: "ServerInfo", mode: "map", c: true, s: true },
+  { name: "TbRobotName", bean: "RobotName", mode: "map", c: false, s: true }
+];
+(function initGrp() {
+  var tbody = $("#grp-table tbody"), clientBox = $("#grp-client"), serverBox = $("#grp-server");
+  function render() {
+    tbody.innerHTML = "";
+    TABLES.forEach(function (t) {
+      function tdCheck(prop) {
+        var td = el("td", { style: "text-align:center" });
+        var cb = el("input", { type: "checkbox" });
+        cb.checked = t[prop];
+        cb.addEventListener("change", function () { t[prop] = this.checked; render(); });
+        td.appendChild(cb);
+        return td;
+      }
+      tbody.appendChild(el("tr", {}, [
+        el("td", {}, [el("code", { text: t.name })]),
+        el("td", { text: t.bean }),
+        el("td", {}, [el("span", { class: "badge " + (t.mode === "one" ? "b-purple" : "b-gray"), text: t.mode })]),
+        tdCheck("c"), tdCheck("s")
+      ]));
+    });
+    function gen(side) {
+      var list = TABLES.filter(function (t) { return t[side]; });
+      var any = list.length === 0;
+      return (any ? "<span style='color:var(--danger)'>(空——该端一张表都没有！)</span>" :
+        list.map(function (t) {
+          return "✓ " + t.name + ".cs &nbsp;+&nbsp; " + t.name.toLowerCase() + ".bytes";
+        }).join("<br>")) +
+        "<div style='margin-top:8px;color:var(--text-faint)'>Tables.cs 属性：" + (any ? "—" : list.map(function (t) { return t.name; }).join(", ")) + "</div>";
+    }
+    clientBox.innerHTML = gen("c");
+    serverBox.innerHTML = gen("s");
+  }
+  $("#grp-reset").addEventListener("click", function () {
+    TABLES[0].c = TABLES[0].s = TABLES[1].c = TABLES[1].s = TABLES[2].c = TABLES[2].s = true;
+    TABLES[3].c = false; TABLES[3].s = true;
+    render();
+  });
+  render();
+})();
+
+/* ================= 表数据浏览器 ================= */
+var DATA = {
+  TbItem: {
+    head: ["id", "name", "desc", "price", "quality", "stackable"],
+    rows: [
+      [10001, "木剑", "新手木剑，聊胜于无", 10, "White", true],
+      [10002, "铁剑", "标准制式铁剑", 100, "Green", true],
+      [10003, "秘银法杖", "附魔秘银法杖，释放更快", 980, "Blue", false],
+      [10004, "屠龙宝刀", "一刀999", 99999, "Orange", false],
+      [20001, "红药水", "回复50点生命", 5, "White", true],
+      [20002, "蓝药水", "回复50点法力", 8, "White", true]
+    ],
+    render: function (r) {
+      return [
+        el("td", {}, [el("code", { text: String(r[0]) })]),
+        el("td", { style: "font-weight:600", text: r[1] }),
+        el("td", { text: r[2] }),
+        el("td", { text: String(r[3]) }),
+        el("td", {}, [el("span", { class: "badge", style: "color:" + ({ White: "#9aa3b5", Green: "#22c55e", Blue: "#3b82f6", Purple: "#a855f7", Orange: "#f97316" })[r[4]], text: "◆ " + r[4] })]),
+        el("td", { text: r[5] ? "✓" : "—" })
+      ];
+    }
+  },
+  TbServerList: {
+    head: ["id", "name", "host", "port", "state"],
+    rows: [
+      [1, "本地开发服", "127.0.0.1", 29100, "Normal"],
+      [2, "内网测试服", "192.168.1.100", 29100, "Busy"],
+      [3, "压测服", "10.0.0.50", 29100, "Maintain"]
+    ],
+    render: function (r) {
+      var st = { Normal: "b-green", Busy: "b-amber", Maintain: "b-red" }[r[4]];
+      return [
+        el("td", {}, [el("code", { text: String(r[0]) })]),
+        el("td", { style: "font-weight:600", text: r[1] }),
+        el("td", { style: "font-family:var(--mono)", text: r[2] }),
+        el("td", { text: String(r[3]) }),
+        el("td", {}, [el("span", { class: "badge " + st, text: r[4] })])
+      ];
+    }
+  },
+  TbGlobal: {
+    head: ["patchUrl", "fallbackPatchUrl", "hotfixEnabled"],
+    rows: [["http://127.0.0.1:8080/CDN/StandaloneWindows64/v1.0", "http://127.0.0.1:8080/CDN/StandaloneWindows64/v1.0", false]],
+    render: function (r) {
+      return [
+        el("td", { style: "font-family:var(--mono);font-size:12px", text: r[0] }),
+        el("td", { style: "font-family:var(--mono);font-size:12px", text: r[1] }),
+        el("td", { text: r[2] ? "✓" : "false" })
+      ];
+    }
+  }
+};
+(function initDt() {
+  var current = "TbItem";
+  function render() {
+    var def = DATA[current];
+    var q = $("#dt-search").value.trim().toLowerCase();
+    var table = $("#dt-table");
+    table.innerHTML = "";
+    var thead = el("thead", {}, [el("tr", {}, def.head.map(function (h) { return el("th", { text: h }); }))]);
+    var tbody = el("tbody", {});
+    def.rows.forEach(function (r) {
+      if (q && r.join(" ").toLowerCase().indexOf(q) < 0) return;
+      tbody.appendChild(el("tr", {}, def.render(r)));
+    });
+    if (!tbody.children.length) tbody.appendChild(el("tr", {}, [el("td", { colspan: String(def.head.length), text: "无匹配行", style: "text-align:center;color:var(--text-faint)" })]));
+    table.appendChild(thead); table.appendChild(tbody);
+  }
+  $$("[data-tbl]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      $$("[data-tbl]").forEach(function (b) { b.classList.remove("primary"); });
+      this.classList.add("primary");
+      current = this.getAttribute("data-tbl");
+      $("#dt-search").value = "";
+      render();
+    });
+  });
+  $("#dt-search").addEventListener("input", render);
+  render();
+})();
+</script>
+</body>
+</html>

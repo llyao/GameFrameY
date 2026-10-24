@@ -1,0 +1,7 @@
+[
+  { "id": 1, "targetScore": 1500, "moveCount": 20, "rowCount": 8, "columnCount": 8, "colorCount": 5 },
+  { "id": 2, "targetScore": 2600, "moveCount": 20, "rowCount": 8, "columnCount": 8, "colorCount": 5 },
+  { "id": 3, "targetScore": 3800, "moveCount": 18, "rowCount": 8, "columnCount": 8, "colorCount": 6 },
+  { "id": 4, "targetScore": 5200, "moveCount": 20, "rowCount": 9, "columnCount": 9, "colorCount": 6 },
+  { "id": 5, "targetScore": 4600, "moveCount": 15, "rowCount": 8, "columnCount": 8, "colorCount": 4 }
+]

@@ -25,12 +25,22 @@ public partial class Tables
     /// 服务器列表
     /// </summary>
     public TbServerList TbServerList {get; }
+    /// <summary>
+    /// 消消乐关卡（仅客户端）
+    /// </summary>
+    public TbMatch3Level TbMatch3Level {get; }
+    /// <summary>
+    /// 消消乐参数（仅客户端）
+    /// </summary>
+    public TbMatch3Const TbMatch3Const {get; }
 
     public Tables(System.Func<string, ByteBuf> loader)
     {
         TbItem = new TbItem(loader("tbitem"));
         TbGlobal = new TbGlobal(loader("tbglobal"));
         TbServerList = new TbServerList(loader("tbserverlist"));
+        TbMatch3Level = new TbMatch3Level(loader("tbmatch3level"));
+        TbMatch3Const = new TbMatch3Const(loader("tbmatch3const"));
         ResolveRef();
     }
     
@@ -39,6 +49,8 @@ public partial class Tables
         TbItem.ResolveRef(this);
         TbGlobal.ResolveRef(this);
         TbServerList.ResolveRef(this);
+        TbMatch3Level.ResolveRef(this);
+        TbMatch3Const.ResolveRef(this);
     }
 }
 

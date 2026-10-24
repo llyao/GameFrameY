@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>04 UI 与场景 — GameFrameY 模块说明系列</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-page="ui-scene.html">
+<aside class="sidebar" id="sidebar"></aside>
+<div class="main">
+<main class="content">
+
+<header class="hero">
+  <span class="chapter">CH.04 · UI 与场景</span>
+  <h1>UI（核心 + UGUI 适配）与场景管理</h1>
+  <p class="lede">UI 是经典的双包结构：<code>com.gameframex.unity.ui</code>（后端无关抽象：UIGroup 层级 / IUIForm 生命周期 / 实例池）+ <code>com.gameframex.unity.ui.ugui</code>（UGUI 实现：prefab 实例化 / 组 Canvas / Z 偏移层级）。场景包 <code>scene</code> 把 YooAsset 的 <code>SceneHandle</code> 包装成按路径的加载/卸载/激活顺序管理。</p>
+  <div class="hero-facts">
+    <span class="chip acc">ui 3.0.1 · ui.ugui 2.7.2 · scene 3.0.2</span>
+    <span class="chip">UIComponent Order = 1400（最晚挂载）</span>
+    <span class="chip">默认 18 个 UIGroup</span>
+  </div>
+</header>
+
+<h2 id="ui-arch">1 UI 体系分层</h2>
+<pre class="codeblock"><code data-lang="text">UIComponent（门面，Open/Close/Get/UIGroup 管理，[GameFrameXAutoComponent(1400)]）
+   │
+   ├── ui 包：BaseUIManager（加载编排、单例复用、实例池 m_InstancePool）
+   │     IUIForm / UIForm(MonoBehaviour 基类) / IUIGroup / UIGroup(18 组)
+   │     特性：[OptionUIConfig] [OptionUIGroup] [OptionUIAllowMultiInstance] [OptionUIShowAnimation]…
+   │
+   └── ui.ugui 包（适配器/策略三扩展点）：
+         UGUIFormHelper : UIFormHelperBase      ← 实例化 prefab、挂逻辑组件、归组
+         UGUIUIGroupHelper : UIGroupHelperBase  ← 每组一个 Canvas，Z = depth × 1000
+         UIManager : BaseUIManager（internal sealed）← Resources/YooAsset 双路径加载 + InstantiateSync</code></pre>
+
+<h2 id="groups">2 UIGroup：18 层固定层级（点击查看）</h2>
+<p>层级不是 <code>OpenAsync</code> 的参数——<strong>界面归属哪个组由 <code>[OptionUIGroup("...")]</code> 特性（或默认组）决定</strong>，组按深度排序渲染，组内再按 <code>DepthInUIGroup</code>。UGUI 实现里组的 Z 坐标 = <code>depth × 1000</code>。</p>
+
+<div class="demo">
+  <div class="demo-header"><span class="demo-tag">INTERACTIVE</span>UIGroup 层级栈（自上而下 = 从顶层到底层）</div>
+  <div class="demo-body">
+    <div id="ug-stack" style="display:flex;flex-direction:column;gap:4px"></div>
+    <div class="info-panel" id="ug-info" style="margin-top:12px"><div class="ip-title">👆 点击任意组</div><p>查看该组的深度与用途建议。</p></div>
+  </div>
+</div>
+
+<h2 id="open">3 打开一个界面：OpenAsync 全家桶与内部流程</h2>
+<pre class="codeblock"><code data-lang="cs">// 三参核心版：路径 + 用户数据 + 是否全屏（不暂停被覆盖界面）
+Task&lt;T&gt; OpenAsync&lt;T&gt;(string uiFormAssetPath, object userData = null, bool isFullScreen = false) where T : class, IUIForm;
+// 四参版：可控制 pauseCoveredUIForm
+Task&lt;T&gt; OpenAsync&lt;T&gt;(string uiFormAssetPath, bool pauseCoveredUIForm, object userData = null, bool isFullScreen = false);
+// 免路径版：路径 = Utility.Asset.Path.GetUIPath(typeof(T).Name)，可被 [OptionUIConfig(Path=...)] 覆盖
+Task&lt;T&gt; OpenAsync&lt;T&gt;(object userData = null, bool isFullScreen = false);
+Task&lt;T&gt; OpenFullScreenAsync&lt;T&gt;(string path, object userData = null);
+
+// 自研桥接（IUIService）：注意返回 Task 而非 UniTask
+Task&lt;T&gt; OpenUIAsync&lt;T&gt;(string uiFormAssetPath, object userData = null) where T : class, IUIForm;
+void CloseUI&lt;T&gt;(object userData = null) where T : IUIForm;</code></pre>
+
+<div class="demo">
+  <div class="demo-header"><span class="demo-tag">STEPPER</span>OpenAsync 内部流程（点步骤展开）
+    <span style="margin-left:auto;display:flex;gap:6px">
+      <button class="btn sm" id="ui-prev">←</button><button class="btn sm primary" id="ui-play">▶ 播放</button><button class="btn sm" id="ui-next">→</button>
+    </span>
+  </div>
+  <div class="demo-body"><div class="stepper" id="ui-steps"></div></div>
+</div>
+
+<h2 id="form">4 IUIForm：界面的完整生命周期</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>阶段</th><th>方法</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td rowspan="3">创建</td><td><code>OnAwake()</code></td><td>组件首次挂到 prefab 实例时（IsAwake 标记防重入）</td></tr>
+    <tr><td><code>Init(serialId, assetPath, group, onInitAction, pauseCoveredUIForm, isNewInstance, userData, recycleInterval, isFullScreen)</code></td><td>框架回填元信息</td></tr>
+    <tr><td><code>OnInit()</code> → <code>OnOpen(object userData)</code></td><td>打开（userData 透传 OpenAsync 参数）</td></tr>
+    <tr><td rowspan="2">绑定</td><td><code>BindEvent() / LoadData()</code></td><td>事件绑定与数据装载（推荐在这里读配置表/发请求）</td></tr>
+    <tr><td><code>UpdateLocalization()</code></td><td>本地化刷新（语言切换事件时也会被调，见 06 章）</td></tr>
+    <tr><td>显隐</td><td><code>Show(handler, complete) / Hide(handler, complete) / OnPause / OnResume / OnCover / OnReveal / OnRefocus(userData)</code></td><td>被覆盖=Pause+Cover，露出来=Resume+Reveal；同界面再 Open 会 Refocus 而不是重开</td></tr>
+    <tr><td>每帧</td><td><code>OnUpdate(elapse, realElapse)</code></td><td>UIComponent 驱动</td></tr>
+    <tr><td>关闭</td><td><code>OnClose(isShutdown, userData)</code></td><td>isShutdown=true 表示框架关闭而非正常关闭</td></tr>
+    <tr><td>回收</td><td><code>OnRecycle()</code> / <code>RecycleInterval / IsDisableRecycling / IsCanRecycle</code></td><td>实例池自动回收策略（UIOptions.InstanceExpireTime=60s 等四参数）</td></tr>
+  </tbody>
+</table></div>
+<p>常用属性：<code>SerialId / FullName / UIFormAssetName / Handle / Visible / UIGroup / DepthInUIGroup / PauseCoveredUIForm / EnableShowAnimation + ShowAnimationName / EnableHideAnimation + HideAnimationName</code>。UGUI 后端的界面基类是 <code>UGUI : UIForm</code>（注意类名就叫 <code>UGUI</code>），<code>Visible</code> 映射 <code>gameObject.activeSelf</code>，<code>MakeFullScreen()</code> 拉满 RectTransform。</p>
+
+<h3>4.1 特性速查</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th>特性</th><th>参数</th><th>效果</th></tr></thead>
+  <tbody>
+    <tr><td><code>[OptionUIConfig]</code></td><td>Path / PackageName / IsResource</td><td>免路径 OpenAsync 的资源定位；IsResource=true 走 Resources 而非 YooAsset</td></tr>
+    <tr><td><code>[OptionUIGroup]</code></td><td>GroupName</td><td>界面归属的组（默认 Normal）</td></tr>
+    <tr><td><code>[OptionUIAllowMultiInstance]</code></td><td>—</td><td>允许同界面多实例；<strong>默认单例</strong>：已打开 → Refocus，加载中 → 复用同一个加载 Task</td></tr>
+    <tr><td><code>[OptionUIShowAnimation] / [OptionUIHideAnimation]</code></td><td>Enable / AnimationName</td><td>界面动画（UIOptions 全局开关默认关）</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="close">5 关闭与查询</h2>
+<pre class="codeblock"><code data-lang="cs">uiComponent.CloseUIForm&lt;LoginUI&gt;(userData);                 // 泛型关（桥接层同名）
+uiComponent.CloseUIForm(serialId, isNowRecycle: false);    // 序列号关
+uiComponent.CloseUIGroup("Dialog");                        // 整组关
+uiComponent.CloseAllLoadedUIForms();                       // 全部关
+// 查询：GetUIForm&lt;T&gt;() / GetLoadedList&lt;T&gt;() / HasLoadedAndShowing(name) / GetAllLoadingUIFormSerialIds()
+// 组管理：AddUIGroup("Activity", depth: 26) / HasUIGroup / GetAllUIGroups</code></pre>
+
+<h2 id="ugui">6 UGUI 适配的三个关键实现</h2>
+<pre class="codeblock"><code data-lang="cs">// ① 加载与实例化（UIManager.Open.cs）：Resources / YooAsset 双路径
+if (uiFormAssetPath.IndexOf(Utility.Asset.Path.BundlesDirectoryName) &lt; 0)
+    original = (GameObject)Resources.Load(assetPath);          // Resources 兜底
+else {
+    var assetHandle = await m_AssetManager.LoadAssetAsync&lt;UnityEngine.Object&gt;(assetPath);
+    var gameObject = assetHandle.InstantiateSync();            // ← prefab 实例化点
+    openUIFormInfo.SetAssetHandle(assetHandle);                // 句柄由框架持有
+}
+
+// ② 归组与特性解析（UGUIFormHelper.CreateUIForm）
+var componentType = uiGameObject.GetOrAddComponent(uiFormType); // 把逻辑组件挂上实例
+if (uiForm.IsAwake == false) uiForm.OnAwake();
+uiTransform.SetParent(helper.transform);                        // helper = 组容器
+uiTransform.localScale = Vector3.one;
+
+// ③ 组层级（UGUIUIGroupHelper.SetDepth）
+transform.localPosition = new Vector3(0, 0, depth * 1000);       // Z 偏移实现层叠
+// 每组 EnsureCanvas：ScreenSpaceCamera Canvas（planeDistance=100, overrideSorting）</code></pre>
+<div class="code-caption">生命周期调用顺序：CreateUIForm → Init → AddUIForm → OnOpen → BindEvent → LoadData → UpdateLocalization → Show → uiGroup.Refresh() → 成功事件</div>
+
+<h2 id="scene">7 Scene 包 — 场景管理</h2>
+<pre class="codeblock"><code data-lang="cs">// SceneComponent（[GameFrameXAutoComponent(-4000)]）
+Task&lt;SceneHandle&gt; LoadScene(string sceneAssetName);                    // 默认 Single
+Task&lt;SceneHandle&gt; LoadScene(string sceneAssetName, LoadSceneMode mode, object userData = null);
+void UnloadScene(string sceneAssetName, object userData = null);
+void SetSceneOrder(string sceneAssetName, int sceneOrder);   // active scene = 最大 order 的已加载场景
+void RefreshMainCamera();  Camera MainCamera { get; }
+bool SceneIsLoaded / SceneIsLoading / SceneIsUnloading(string sceneAssetName);
+string[] GetLoadedSceneAssetNames();                          // 及 Loading/Unloading 版本
+public static string GetSceneName(string sceneAssetName);     // 剥目录与 ".unity" 后缀</code></pre>
+<div class="callout warn">
+  <div class="callout-title">三条约束（源码行为）</div>
+  <ul style="margin:4px 0 0">
+    <li><code>sceneAssetName</code> 必须以 <code>Assets/</code> 开头、<code>.unity</code> 结尾，否则 <code>ArgumentException</code>。</li>
+    <li><strong>Single 模式会先卸载全部已加载场景</strong>（提前占位防重入 + 统一释放旧场景的 YooAsset 引用）；已加载场景重复 Load（Additive）抛异常。</li>
+    <li>YooAsset await 完成可能早于 Unity <code>scene.isLoaded</code>，SetActiveScene 失败时内部协程最多重试 60 帧再激活（别在 Load 返回瞬间就假设 active scene 已切换）。</li>
+  </ul>
+</div>
+<p>事件（经事件总线转发）：<code>LoadSceneSuccessEventArgs（含 Duration/UserData）/ LoadSceneFailure / LoadSceneUpdate(Progress) / UnloadSceneSuccess/Failure / ActiveSceneChanged</code>。SceneOptions 两个开关：<code>EnableLoadSceneUpdateEvent</code>（默认 true）、<code>EnableLoadSceneDependencyAssetEvent</code>（依赖资源更新事件，默认 true）。</p>
+
+<footer class="pagenav"></footer>
+</main>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+/* ================= UIGroup 层级栈 ================= */
+var GROUPS = [
+  ["Hidden", 40, "完全隐藏层（收起的界面）"], ["Background", 35, "背景层（主菜单背景图等）"],
+  ["Scene", 30, "场景层 UI（世界内嵌面板）"], ["World", 27, "世界空间 UI"], ["Battle", 25, "战斗主界面（HUD 框架）"],
+  ["Hud", 22, "头顶信息/血条"], ["Map", 20, "小地图"], ["Floor", 15, "底层提示"],
+  ["Normal", 15, "常规二级界面（背包/设置）→ 默认组", true], ["Fixed", 12, "固定层（顶部栏/货币栏）"],
+  ["Window", 10, "弹窗"], ["Tip", 9, "气泡提示"], ["Guide", 8, "新手引导遮罩"],
+  ["BlackBoard", 7, "全屏遮罩/转场黑幕"], ["Dialogue", 6, "对话"], ["Loading", 5, "加载进度"],
+  ["Notify", 4, "跑马灯/系统通知"], ["System", 3, "系统级（强制弹窗/断线重连）"]
+];
+GROUPS.sort(function (a, b) { return b[1] - a[1]; });
+(function initUg() {
+  var stack = $("#ug-stack"), info = $("#ug-info");
+  var maxD = GROUPS[0][1];
+  GROUPS.forEach(function (g) {
+    var bar = el("div", {
+      style: "display:flex;align-items:center;gap:10px;padding:6px 12px;border-radius:8px;cursor:pointer;" +
+        "border:1px solid var(--border);background:linear-gradient(90deg,var(--accent-soft) " + (g[1] / maxD * 100) + "%,var(--card) " + (g[1] / maxD * 100) + "%);transition:transform .12s",
+      onclick: function () {
+        info.innerHTML = '<div class="ip-title"><span class="mono">' + esc(g[0]) + '</span><span class="badge b-blue">depth ' + g[1] + '</span>' + (g[3] ? '<span class="badge b-green">默认组</span>' : '') + "</div>" +
+          "<p>" + esc(g[2]) + "</p><p style='font-family:var(--mono);font-size:12px'>UGUI 实现：组容器 Z = " + g[1] + " × 1000 = " + (g[1] * 1000) + "；组内排序另算 DepthInUIGroup。</p>";
+      }
+    }, [
+      el("span", { text: g[0], style: "font-family:var(--mono);font-weight:700;font-size:12.5px;width:92px;flex:none" }),
+      el("span", { class: "badge b-gray", text: String(g[1]) }),
+      el("span", { text: g[2], style: "font-size:12px;color:var(--text-soft)" })
+    ]);
+    bar.addEventListener("mouseenter", function () { bar.style.transform = "translateX(4px)"; });
+    bar.addEventListener("mouseleave", function () { bar.style.transform = ""; });
+    stack.appendChild(bar);
+  });
+})();
+
+/* ================= OpenAsync 流程 stepper ================= */
+var UI_STEPS = [
+  { t: "单例复用检查", d: "无 <code>[OptionUIAllowMultiInstance]</code> 时：已打开 → 直接 <code>RefocusUIForm</code>（OnRefocus + 提到组顶）并返回；加载中 → 复用同一个 <code>UIFormLoadingObject.Task</code>，不重复加载。实例池 <code>m_InstancePool.Spawn(assetPath)</code> 命中则直接复用回收的实例（isNewInstance=false）。" },
+  { t: "加载 prefab（Resources / YooAsset 双路径）", d: "路径不含 Bundles 目录名走 <code>Resources.Load</code>；否则 <code>await m_AssetManager.LoadAssetAsync&lt;Object&gt;(assetPath)</code>，成功后 <code>assetHandle.InstantiateSync()</code> 实例化，句柄存入 <code>openUIFormInfo.SetAssetHandle()</code>（框架持有，业务不释放）。" },
+  { t: "CreateUIForm：挂组件 + 归组", d: "<code>UGUIFormHelper.CreateUIForm</code>：GetOrAddComponent(界面逻辑类型) → OnAwake → 解析 <code>[OptionUIGroup]</code> 归组（<code>GetUIGroup(name)</code>）→ 解析动画特性 → SetParent(组容器)。资源路径在 Bundles 下时失败会回调 <code>LoadAssetFailureCallback</code> 并 Fire OpenUIFormFailure 事件。" },
+  { t: "Init → OnOpen(userData)", d: "框架回填 SerialId/组/回收间隔等元信息，然后调 <code>OnOpen(userData)</code>——userData 就是 <code>OpenAsync</code> 传进来的业务参数。" },
+  { t: "BindEvent → LoadData → UpdateLocalization", d: "绑定按钮/事件（推荐在这里订阅事件总线）；装载数据（读配置表/发网络请求）；刷新本地化文本。" },
+  { t: "Show（可选动画）→ Refresh", d: "开启动画则 <code>EnableShowAnimation</code> 走动画名；<code>uiGroup.Refresh()</code> 更新组内排序与 Pause/Cover 状态（PauseCoveredUIForm=true 时被覆盖界面收到 OnPause+OnCover）。最后 Fire <code>OpenUIFormSuccessEventArgs</code>，OpenAsync 的 Task 完成。" }
+];
+(function initUiSteps() {
+  var holder = $("#ui-steps"), cur = 0, timer = null;
+  var nodes = UI_STEPS.map(function (s, i) {
+    return el("div", { class: "step", onclick: function () { go(i, true); } }, [
+      el("div", { class: "step-dot", text: String(i + 1) }),
+      el("div", {}, [
+        el("div", { class: "step-title", text: s.t }),
+        el("div", { class: "step-detail", html: "<p style='margin:0'>" + s.d + "</p>" })
+      ])
+    ]);
+  });
+  nodes.forEach(function (n) { holder.appendChild(n); });
+  function go(i, stop) {
+    cur = Math.max(0, Math.min(UI_STEPS.length - 1, i));
+    nodes.forEach(function (n, k) { n.classList.toggle("active", k === cur); n.classList.toggle("done", k < cur); });
+    if (stop && timer) { clearInterval(timer); timer = null; $("#ui-play").textContent = "▶ 播放"; }
+  }
+  $("#ui-prev").addEventListener("click", function () { go(cur - 1, true); });
+  $("#ui-next").addEventListener("click", function () { go(cur + 1, true); });
+  $("#ui-play").addEventListener("click", function () {
+    if (timer) { clearInterval(timer); timer = null; this.textContent = "▶ 播放"; return; }
+    this.textContent = "⏸ 暂停";
+    if (cur >= UI_STEPS.length - 1) go(0);
+    timer = setInterval(function () {
+      if (cur >= UI_STEPS.length - 1) { clearInterval(timer); timer = null; $("#ui-play").textContent = "▶ 播放"; return; }
+      go(cur + 1);
+    }, 2400);
+  });
+  go(0);
+})();
+</script>
+</body>
+</html>

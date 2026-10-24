@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>05 Network · 网络与协议 — GameFrameY 模块说明系列</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-page="network.html">
+<aside class="sidebar" id="sidebar"></aside>
+<div class="main">
+<main class="content">
+
+<header class="hero">
+  <span class="chapter">CH.05 · 网络</span>
+  <h1>Network — 通道制网络与双端协议</h1>
+  <p class="lede">network 包（3.0.0）是<strong>命名通道（Channel）</strong>制：每条通道一份 <code>INetworkChannelHelper</code> 编解码管线，TCP Socket 与 WebSocket 双后端（编译宏选择），带可插拔分包、心跳、特性驱动消息分发与异步 RPC。底层 WebSocket 由 <code>psygames.unitywebsocket</code>（2.9.3）提供；协议约定在 <code>Protobuf/</code> 目录与 GameFrameX.Tools 生成体系。</p>
+  <div class="hero-facts">
+    <span class="chip acc">com.gameframex.unity.network 3.0.0</span>
+    <span class="chip acc">psygames.unitywebsocket 2.9.3</span>
+    <span class="chip">消息 ID = (moduleId &lt;&lt; 16) + seqId</span>
+  </div>
+</header>
+
+<h2 id="arch">1 通道制架构</h2>
+<pre class="codeblock"><code data-lang="text">NetworkComponent（[GameFrameXAutoComponent(1000)]，门面：创建/查找/销毁通道）
+   │  CreateNetworkChannel(name, helper)
+   ▼
+NetworkChannelBase（每通道一个：发送队列 / 接收队列 / 心跳 / RPC 状态）
+   │  后端选择（NetworkManager.cs 编译期决定）：
+   │    #if (ENABLE_GAME_FRAME_X_WEB_SOCKET && UNITY_WEBGL) || FORCE_ENABLE_GAME_FRAME_X_WEB_SOCKET
+   │        WebSocketNetworkChannel ──► UnityWebSocket（WebGL: JSLIB / 其他: System.Net.WebSockets）
+   │    #else
+   │        SystemTcpNetworkChannel ──► 原生 System.Net.Sockets.Socket
+   │    #endif
+   ▼
+INetworkSocket（统一适配层：Send / Shutdown / 二进制接收回调 / 关闭原因+错误码）
+
+主线程每帧（NetworkComponent.Update 驱动）：
+ProcessSend → ProcessReceive → ProcessHeartBeat → ProcessReceivedMessage → PRpcState.Update</code></pre>
+<p>组件还会把通道事件转发到事件总线：<code>NetworkConnectedEventArgs / NetworkClosedEventArgs{Channel, Reason, ErrorCode} / NetworkMissHeartBeatEventArgs / NetworkErrorEventArgs</code>（没有独立的 "Disconnected" 事件，断开即 Closed）。</p>
+
+<h2 id="api">2 关键 API</h2>
+<pre class="codeblock"><code data-lang="cs">// NetworkComponent（门面）
+INetworkChannel CreateNetworkChannel(string channelName, INetworkChannelHelper helper);
+INetworkChannel GetNetworkChannel(string channelName);
+bool HasNetworkChannel(string channelName);
+bool DestroyNetworkChannel(string channelName);
+
+// 自研桥接 INetworkService（GameFrameY 模块 "Network"，Priority 700 最先装配）
+INetworkChannel CreateChannel(string channelName, INetworkChannelHelper helper);
+INetworkChannel GetChannel(string channelName);
+bool HasChannel(string channelName);
+
+// INetworkChannel（连接与发送都在通道上）
+void Connect(Uri address, object userData = null);     // 地址/协议在连接时给出
+void Send&lt;T&gt;(T messageObject) where T : MessageObject;
+Task&lt;TResult&gt; Call&lt;TResult&gt;(MessageObject req, bool isIgnoreErrorCode = false)
+    where TResult : MessageObject, IResponseMessage;   // 异步 RPC：RpcState 匹配 + 超时（默认 5000ms）
+void Close(string reason, ushort code = 0);
+
+bool Connected { get; }   float HeartBeatInterval { get; set; }   int MissHeartBeatCount { get; }
+bool ResetHeartBeatElapseSecondsWhenReceivePacket { get; set; }   // 收包即重置心跳计时（默认行为可关）
+
+// 编解码管线注册（通常不用手动调——DefaultNetworkChannelHelper.Initialize 反射全注册）
+void RegisterHandler(IPacketSendHeaderHandler / IPacketSendBodyHandler /
+                     IPacketReceiveHeaderHandler / IPacketReceiveBodyHandler handler);
+void RegisterHeartBeatHandler(IPacketHeartBeatHandler handler);
+void RegisterMessageCompressHandler(IMessageCompressHandler handler);     // 可选压缩
+void RegisterMessageDecompressHandler(IMessageDecompressHandler handler);
+void SetRPCErrorHandler(EventHandler&lt;MessageObject&gt; handler);            // 及 Start/End/ErrorCode 三件</code></pre>
+
+<h2 id="helper">3 INetworkChannelHelper — 编解码的唯一扩展点</h2>
+<pre class="codeblock"><code data-lang="cs">public interface INetworkChannelHelper
+{
+    void Initialize(INetworkChannel networkChannel);   // DefaultNetworkChannelHelper：反射扫描全部 IPacketHandler 自动注册
+    void Shutdown();
+    void PrepareForConnecting();
+    bool SendHeartBeat();                              // 心跳包由 helper 决定（IHeartBeatMessage）
+    bool SerializePacketHeader&lt;T&gt;(T msg, MemoryStream dest, out byte[] body);  //包头
+    bool SerializePacketBody(byte[] body, MemoryStream dest);                   // 包体
+    bool DeserializePacketHeader(byte[] source);
+    bool DeserializePacketBody(byte[] source, int messageId, out MessageObject msg);
+}
+// 默认实现 DefaultNetworkChannelHelper 还提供 SetChannelSerializer(IMessageSerializer)，
+// 须在 Initialize 之前调用（protobuf-net / 自定义序列化器在此接入）</code></pre>
+<p>配套默认管线类：<code>DefaultPacketSendHeaderHandler / DefaultPacketSendBodyHandler / DefaultPacketReceiveHeaderHandler / DefaultPacketReceiveBodyHandler / BasePacketHeartBeatHandler / DefaultMessageSerializer</code>。消息基类体系在 <code>Runtime/Network/Base/</code>：<code>MessageObject</code>、<code>IRequestMessage / IResponseMessage / INotifyMessage / IHeartBeatMessage</code>。接收分发不走接口回调——由 <code>ProtoMessageHandler.GetHandlers(msgType)</code> 按 <code>[MessageHandler]</code> / <code>[MessageTypeHandler]</code> 特性反射注册的处理器在<strong>主线程 Update 消费队列</strong>时逐个 Invoke。</p>
+
+<div class="demo">
+  <div class="demo-header"><span class="demo-tag">ANIMATION</span>一条消息的旅程：Send → 网络线 → Receive → 分发
+    <span style="margin-left:auto"><button class="btn sm primary" id="pk-send">📤 Send(HeartbeatReq)</button></span>
+  </div>
+  <div class="demo-body">
+    <div id="pk-pipe" style="display:flex;gap:0;align-items:stretch;flex-wrap:wrap"></div>
+    <div class="demo-log" id="pk-log"></div>
+  </div>
+</div>
+
+<h2 id="heartbeat">4 心跳机制（源码级）</h2>
+<pre class="codeblock"><code data-lang="cs">private void ProcessHeartBeat(float realElapseSeconds)
+{
+    if (PHeartBeatInterval &gt; 0f)
+    {
+        lock (PHeartBeatState)
+        {
+            PHeartBeatState.HeartBeatElapseSeconds += realElapseSeconds;
+            if (PHeartBeatState.HeartBeatElapseSeconds &gt;= PHeartBeatInterval)
+            {
+                sendHeartBeat = true;                       // 到点：发心跳
+                PHeartBeatState.HeartBeatElapseSeconds = 0;
+                PHeartBeatState.MissHeartBeatCount++;       // 同时丢跳计数 +1
+            }
+            if (sendHeartBeat && PFocusHeartbeat)
+                if (PNetworkChannelHelper.SendHeartBeat()) return;   // 发出即认为本回合健康
+            if (PHeartBeatState.MissHeartBeatCount &gt; MissHeartBeatCountByClose)
+                shouldClose = true;
+        }
+        if (shouldClose)
+            Close(NetworkCloseReason.MissHeartBeat, (ushort)NetworkErrorCode.MissHeartBeatError);
+    }
+}</code></pre>
+<div class="code-caption">要点：收到任意数据包会重置计时（ResetHeartBeatElapseSecondsWhenReceivePacket）；MissHeartBeatCount 超阈值自动断开并广播 NetworkMissHeartBeatEventArgs；没有自动重连——重连由上层订阅 NetworkClosedEventArgs 自行处理</div>
+
+<div class="demo">
+  <div class="demo-header"><span class="demo-tag">SIMULATOR</span>心跳 &amp; 丢跳断连模拟</div>
+  <div class="demo-body">
+    <div class="demo-controls">
+      <label style="font-size:13px;font-weight:600">HeartBeatInterval：<span id="hb-int" style="font-family:var(--mono);color:var(--accent)">3.0s</span>
+        <input type="range" id="hb-slider" min="1" max="6" step="0.5" value="3" style="vertical-align:middle;margin:0 8px"></label>
+      <button class="btn sm primary" id="hb-start">▶ 开始</button>
+      <button class="btn sm" id="hb-recv">📥 收到服务器数据包（重置计时）</button>
+      <button class="btn sm" id="hb-silent">📴 服务器静默（模拟丢跳）</button>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <div style="flex:1;min-width:280px">
+        <div style="font-size:12px;color:var(--text-faint);margin-bottom:4px">距下次心跳判定</div>
+        <div style="height:20px;background:var(--bg-soft);border-radius:6px;overflow:hidden"><div id="hb-bar" style="height:100%;width:0;background:linear-gradient(90deg,#8b5cf6,#a78bfa);transition:width .1s linear"></div></div>
+      </div>
+      <div style="font-size:13px">MissHeartBeatCount: <strong id="hb-miss" style="font-family:var(--mono);color:var(--warn)">0</strong> / 阈值 3</div>
+      <div style="font-size:13px">状态: <strong id="hb-state">未连接</strong></div>
+    </div>
+    <div class="demo-log" id="hb-log"></div>
+  </div>
+</div>
+
+<h2 id="rpc">5 异步 RPC：Call&lt;TResult&gt;</h2>
+<p><code>Send</code> 是即发即弃；<code>Call&lt;TResult&gt;(req)</code> 走 <code>PRpcState</code>：请求带序列号，收到匹配的 <code>IResponseMessage</code> 时 <code>TryReply</code> 完成 Task；超时（<code>NetworkOptions.RpcTimeout</code>，默认 5000ms）走 <code>SetRPCErrorHandler</code> 回调。RPC 的开始/结束/错误码三类 handler 都可挂。</p>
+<pre class="codeblock"><code data-lang="cs">// 消息分发的推荐写法：特性驱动，主线程执行
+[MessageHandler(typeof(LoginResp))]
+public sealed class LoginRespHandler : MessageHandler&lt;LoginResp&gt;
+{
+    public override void Handle(INetworkChannel channel, LoginResp message) { /* 更新 UI/状态 */ }
+}</code></pre>
+
+<h2 id="websocket">6 WebSocket 库（psygames.unitywebsocket）</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>平台</th><th>实现</th></tr></thead>
+  <tbody>
+    <tr><td>非 WebGL（Editor / Standalone / 移动 / 主机）</td><td><code>System.Net.WebSockets.ClientWebSocket</code>；<code>WebSocketManager</code>（自建单例 GO）每帧把后台线程收到的数据泵回主线程派发</td></tr>
+    <tr><td>WebGL</td><td>JSLIB（<code>__Internal</code> DllImport）绑定 js 层，按 <code>instanceId</code> 管理多连接</td></tr>
+  </tbody>
+</table></div>
+<pre class="codeblock"><code data-lang="cs">// IWebSocket 核心成员
+var socket = new WebSocket("wss://example.com");
+socket.OnOpen += (s, e) =&gt; { };
+socket.OnMessage += (s, e) =&gt; { if (e.IsBinary) { var bytes = e.RawData; } };
+socket.OnClose += (s, e) =&gt; { /* e.Reason, e.Code */ };
+socket.OnError += (s, e) =&gt; { };
+socket.ConnectAsync();
+socket.SendAsync(byte[] data); socket.SendAsync(string text);
+socket.CloseAsync();     // ReadyState: Closed / Closing / Connecting / Open
+
+// network 包对它的适配（NetworkManager.WebSocketNetSocket.cs）
+_client = new WebSocket(url);
+_client.OnMessage += (s, e) =&gt; { if (e.IsBinary) _onReceiveAction.Invoke(e.RawData); };  // 二进制帧 → 分包管线</code></pre>
+
+<h2 id="proto">7 双端协议约定（Protobuf/）</h2>
+<p><code>Protobuf/proto/module_demo.proto</code>（模块 10）——客户端 NetworkComponent 与服务端 SuperSocket(protobuf-net) 共用一份 proto3；生成工具（GameFrameX.Tools <code>proto gen</code>）双端各自产出 C#（接入属于后续基建，当前仓库放置协议与约定）：</p>
+<pre class="codeblock"><code data-lang="proto">syntax = "proto3";
+package game.demo;
+option csharp_namespace = "GameFrameY.Proto.Demo";
+
+message HeartbeatReq  { int64 client_time = 1; }         // ID = (10 &lt;&lt; 16) + 1
+message HeartbeatResp { int64 client_time = 1; int64 server_time = 2; }
+message LoginReq  { string account = 1; string token = 2; }
+message LoginResp { int32 code = 1; int64 player_id = 2; string nickname = 3; }
+message NoticeNotify { string content = 1; }             // 服务器推送</code></pre>
+<div class="callout info">
+  <div class="callout-title">约定速记</div>
+  <ul style="margin:4px 0 0">
+    <li>命名：请求 <code>XxxReq</code> / 响应 <code>XxxResp</code> / 推送 <code>XxxNotify</code>；一个功能模块一个 <code>module_xxx.proto</code>。</li>
+    <li>消息 ID = <code>(moduleId &lt;&lt; 16) + seqId</code>；demo 模块取 10，正式模块从 100 起（服务端 MinModuleId=10 / MaxModuleId=9999 分片校验）。</li>
+    <li>字段编号 1~799 业务使用，800+ 预留框架。</li>
+  </ul>
+</div>
+
+<h2 id="options">8 NetworkOptions</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>字段</th><th>默认</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td><code>RpcTimeout</code></td><td>5000 ms</td><td>创建通道时传入 PRpcState</td></tr>
+    <tr><td><code>FocusHeartbeat</code></td><td>false</td><td>启动期型；true 时仅应用获得焦点才发心跳（NetworkComponent.OnApplicationFocus → SetFocusHeartbeat）</td></tr>
+    <tr><td><code>IgnoredSendNetworkIds / IgnoredReceiveNetworkIds</code></td><td>空</td><td>收发日志忽略的消息 ID（压日志噪音）</td></tr>
+  </tbody>
+</table></div>
+
+<footer class="pagenav"></footer>
+</main>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+/* ================= 分包管线动画 ================= */
+(function initPk() {
+  var STEPS = [
+    ["Send&lt;T&gt;(msg)", "业务线程/主线程调用通道发送，消息对象入发送队列"],
+    ["SerializePacketHeader", "helper 写包头（消息 ID / 长度等，DefaultPacketSendHeaderHandler）"],
+    ["SerializePacketBody", "写包体（IMessageSerializer 序列化，可叠 IMessageCompressHandler 压缩）"],
+    ["INetworkSocket.Send", "字节流进入 TCP Socket / WebSocket 二进制帧，异步发出"],
+    ["接收缓冲 → 半包拼装", "TryDeserializeInplaceByteBuf 式拼包：不够一条就等下一批（EDeserializeError.NOT_ENOUGH）"],
+    ["DeserializePacketHeader / Body", "读包头 → 按 messageId 反序列化出 MessageObject"],
+    ["主线程分发", "ProcessReceivedMessage：先 PRpcState.TryReply 匹配 RPC；未命中走 [MessageHandler] 特性处理器逐个 Invoke"]
+  ];
+  var pipe = $("#pk-pipe"), log = $("#pk-log");
+  var nodes = STEPS.map(function (s, i) {
+    var box = el("div", { style: "flex:1;min-width:118px;padding:10px 8px;border:1px solid var(--border);border-radius:8px;text-align:center;position:relative;margin-right:14px;transition:all .2s" }, [
+      el("div", { class: "badge b-gray", text: String(i + 1) }),
+      el("div", { style: "font-family:var(--mono);font-size:11px;font-weight:700;margin-top:6px", html: s[0] }),
+      el("div", { style: "font-size:10.5px;color:var(--text-faint);margin-top:5px;line-height:1.5", text: s[1] })
+    ]);
+    pipe.appendChild(box);
+    if (i < STEPS.length - 1) {
+      pipe.appendChild(el("div", { style: "align-self:center;color:var(--text-faint);font-size:15px;flex:none", text: "→" }));
+    }
+    return box;
+  });
+  var running = false;
+  function highlight(i, ok) {
+    nodes.forEach(function (n, k) {
+      n.style.borderColor = k === i ? (ok === false ? "var(--danger)" : "var(--accent)") : "var(--border)";
+      n.style.background = k === i ? "var(--accent-soft)" : "transparent";
+      n.style.transform = k === i ? "translateY(-3px)" : "";
+    });
+  }
+  $("#pk-send").addEventListener("click", function () {
+    if (running) return;
+    running = true;
+    dlog(log, "ok", "channel.Send(HeartbeatReq { client_time = now })");
+    var i = 0;
+    var timer = setInterval(function () {
+      if (i >= STEPS.length) {
+        clearInterval(timer); highlight(-1); running = false;
+        dlog(log, "ok", "✓ HeartbeatResp 回来时：TryReply 命中 RPC 或走 HeartbeatRespHandler（同样管线，方向相反）");
+        return;
+      }
+      highlight(i);
+      dlog(log, "info", "Step " + (i + 1) + " · " + STEPS[i][0].replace(/&lt;/g, "<").replace(/&gt;/g, ">"));
+      i++;
+    }, 750);
+  });
+  dlog(log, "info", "点击 Send 观察一条消息经过的 7 个环节（发送 3 步 + 网络 1 步 + 接收 3 步）");
+})();
+
+/* ================= 心跳模拟 ================= */
+(function initHb() {
+  var log = $("#hb-log"), bar = $("#hb-bar"), missEl = $("#hb-miss"), stateEl = $("#hb-state"), intEl = $("#hb-int");
+  var interval = 3.0, elapsed = 0, miss = 0, THRESHOLD = 3, timer = null, silent = false, closed = false;
+  $("#hb-slider").addEventListener("input", function () {
+    interval = parseFloat(this.value);
+    intEl.textContent = interval.toFixed(1) + "s";
+    if (timer) dlog(log, "info", "HeartBeatInterval = " + interval.toFixed(1) + "s");
+  });
+  function setState(t, color) { stateEl.textContent = t; stateEl.style.color = color || "var(--text)"; }
+  function stop() { if (timer) { clearInterval(timer); timer = null; } }
+  $("#hb-start").addEventListener("click", function () {
+    if (timer) { stop(); this.textContent = "▶ 继续"; setState("暂停"); return; }
+    this.textContent = "⏸ 暂停";
+    if (closed) { elapsed = 0; miss = 0; closed = false; silent = false; missEl.textContent = "0"; missEl.style.color = "var(--warn)"; }
+    setState("已连接", "var(--ok)");
+    dlog(log, "ok", "Connect ok —— 心跳计时开始（interval=" + interval.toFixed(1) + "s，收包会重置计时）");
+    timer = setInterval(function () {
+      elapsed += 0.1;
+      bar.style.width = Math.min(100, elapsed / interval * 100) + "%";
+      if (elapsed >= interval) {
+        elapsed = 0; bar.style.width = "0%";
+        if (silent) {
+          miss++; missEl.textContent = String(miss);
+          missEl.style.color = miss >= THRESHOLD ? "var(--danger)" : "var(--warn)";
+          dlog(log, "warn", "SendHeartBeat() 发出但未收到回应 → MissHeartBeatCount = " + miss);
+          if (miss >= THRESHOLD) {
+            stop(); closed = true; setState("已断开 (MissHeartBeat)", "var(--danger)");
+            dlog(log, "err", "✗ MissHeartBeatCount ≥ " + THRESHOLD + " → Close(MissHeartBeat) 并广播 NetworkMissHeartBeatEventArgs");
+            dlog(log, "info", "└ 上层应订阅 NetworkClosedEventArgs 决定重连策略（框架不自动重连）");
+            $("#hb-start").textContent = "▶ 重新连接";
+          }
+        } else {
+          dlog(log, "info", "到点：SendHeartBeat()（IHeartBeatMessage）—— 收包正常则计时重置，Miss 归零");
+          miss = 0; missEl.textContent = "0";
+        }
+      }
+    }, 100);
+  });
+  $("#hb-recv").addEventListener("click", function () {
+    if (closed || !timer) { dlog(log, "warn", "当前未在心跳循环中"); return; }
+    silent = false; elapsed = 0; bar.style.width = "0%";
+    dlog(log, "ok", "收到服务器数据包 → ResetHeartBeatElapseSecondsWhenReceivePacket=true：计时重置");
+  });
+  $("#hb-silent").addEventListener("click", function () {
+    silent = true;
+    dlog(log, "warn", "服务器进入静默（此后到点的心跳将累计丢跳）");
+  });
+  dlog(log, "info", "开始后试试「服务器静默」再等几个周期，观察丢跳计数与自动断连");
+})();
+</script>
+</body>
+</html>

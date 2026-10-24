@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>00 总览 · 架构地图 — GameFrameY 模块说明系列</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-page="index.html">
+<aside class="sidebar" id="sidebar"></aside>
+<div class="main">
+<main class="content">
+
+<header class="hero">
+  <span class="chapter">CH.00 · 总览</span>
+  <h1>GameFrameY 架构地图</h1>
+  <p class="lede">GameFrameX + YooAsset + Luban + VContainer 的游戏客户端框架单仓：全部第三方依赖以<strong>源码（embedded package）</strong>随仓库分发，自研层 <code>GameFrameY.Core</code> 提供<strong>模块管理 + 服务发现</strong>，服务端为 GameFrameX.Server 快照（.NET 10）。本系列逐包拆解每个模块的细节、API 与用法。</p>
+  <div class="hero-facts">
+    <span class="chip acc">Unity 2022.3 LTS</span>
+    <span class="chip">20 个 vendored 包 · 零第三方 registry</span>
+    <span class="chip">服务端 .NET 10 · MongoDB</span>
+    <span class="chip">配置 Luban v5.1 一份定义双端生成</span>
+  </div>
+</header>
+
+<h2 id="what">1 这套框架是什么</h2>
+<p>一句话：<strong>用 VContainer 做依赖注入脊柱，把 GameFrameX 组件族（资源 / 场景 / UI / 事件 / 网络）统一装进"模块"体系，再以 Luban 打通双端配置、以 YooAsset 打通资源管线。</strong>仓库分四块：</p>
+<div class="grid cols-2">
+  <div class="card">
+    <h4 style="margin-top:0">📦 Client/ — Unity 工程</h4>
+    <p style="font-size:13.5px;color:var(--text-soft)">全部第三方包 vendored 在 <code>Packages/</code>（embedded 优先于 registry）；业务代码在 <code>Assets/GameFrameY/</code>；打开 <code>Boot.unity</code> 直接 Play。</p>
+  </div>
+  <div class="card">
+    <h4 style="margin-top:0">🗂 Config/ — Luban 配置仓</h4>
+    <p style="font-size:13.5px;color:var(--text-soft)">一份定义（<code>Defines/schema.xml</code>）+ 数据（<code>Datas/*.json</code>），双端生成：客户端 <code>cfg</code> 命名空间、服务端 <code>GameFrameY.Config</code>；生成器 v5.1.0 源码也在仓内。</p>
+  </div>
+  <div class="card">
+    <h4 style="margin-top:0">🖥 Server/ — 服务端快照</h4>
+    <p style="font-size:13.5px;color:var(--text-soft)">GameFrameX.Server（.NET 10，Actor/TPL DataFlow + SuperSocket + MongoDB）+ 我们新增的 <code>Server/Config</code> 配置库。来源与同步见 <code>Server/PROVENANCE.md</code>。</p>
+  </div>
+  <div class="card">
+    <h4 style="margin-top:0">📡 Protobuf/ — 双端协议</h4>
+    <p style="font-size:13.5px;color:var(--text-soft)">proto3 协议约定（消息 ID = <code>(moduleId &lt;&lt; 16) + seqId</code>），客户端 NetworkComponent 与服务端共用一份 proto（生成工具接入属于后续基建）。</p>
+  </div>
+</div>
+
+<div class="callout info">
+  <div class="callout-title">三个核心概念（自研层的全部）</div>
+  <ul style="margin:4px 0 0">
+    <li><strong>模块</strong>：<code>[GameModule("Name", Dependencies = new[]{"Asset"}, Startup = ModuleStartup.Deferred)]</code> 标记的类，自动发现 → 依赖拓扑排序 → VContainer 链式子作用域装配。</li>
+    <li><strong>服务</strong>：优先构造注入；<code>IServiceRegistry</code> 提供两级查找的服务定位 + 登记事件 + <code>WaitServiceAsync</code>（未就绪先等待）。</li>
+    <li><strong>流程</strong>：启动流程 <code>Launch → Patch → LoadConfig → EnterGame</code> 四步，EnterGame 装配 Deferred 业务模块并广播 <code>GameFrameY.GameReady</code>。</li>
+  </ul>
+</div>
+
+<h2 id="series">2 系列章节</h2>
+<div class="series-grid">
+  <a class="series-card" href="core.html" style="--card-accent:#0ea5e9"><span class="sc-num">01</span><span><span class="sc-title">GameFrameY.Core · 模块管理与服务发现</span><div class="sc-desc">自研层全解：模块自动发现、DFS 拓扑排序、链式子作用域、服务注册表，附拓扑排序模拟器与服务注册表演示</div></span></a>
+  <a class="series-card" href="gameframex.html" style="--card-accent:#f59e0b"><span class="sc-num">02</span><span><span class="sc-title">GameFrameX · 组件底座</span><div class="sc-desc">[GameFrameX] 宿主自举机制、GameEntry、Event / FSM / Procedure / Setting / Mono 六大基础组件</div></span></a>
+  <a class="series-card" href="asset.html" style="--card-accent:#10b981"><span class="sc-num">03</span><span><span class="sc-title">Asset &amp; YooAsset · 资源管理</span><div class="sc-desc">资源包初始化、四种播放模式、句柄引用计数与释放语义，附引用计数演示与排障清单</div></span></a>
+  <a class="series-card" href="ui-scene.html" style="--card-accent:#ec4899"><span class="sc-num">04</span><span><span class="sc-title">UI 与场景</span><div class="sc-desc">UIGroup 18 层层级、IUIForm 完整生命周期、UGUI 适配原理、场景加载与激活顺序</div></span></a>
+  <a class="series-card" href="network.html" style="--card-accent:#8b5cf6"><span class="sc-num">05</span><span><span class="sc-title">Network · 网络与协议</span><div class="sc-desc">通道制架构、分包编解码管线、心跳与 RPC、WebSocket 双实现与 Protobuf 约定</div></span></a>
+  <a class="series-card" href="foundation.html" style="--card-accent:#14b8a6"><span class="sc-num">06</span><span><span class="sc-title">UniTask &amp; VContainer · 异步与 DI 底座</span><div class="sc-desc">零分配异步原语与 PlayerLoop 时机、作用域链解析模拟、EntryPoint 执行时机表</div></span></a>
+  <a class="series-card" href="config.html" style="--card-accent:#f97316"><span class="sc-num">07</span><span><span class="sc-title">Luban · 配置管线</span><div class="sc-desc">一份定义双端生成全链路：schema / 数据 / 脚本 / 运行时加载，附分组过滤演示与表数据浏览器</div></span></a>
+  <a class="series-card" href="server.html" style="--card-accent:#64748b"><span class="sc-num">08</span><span><span class="sc-title">GameFrameX.Server · 服务端概览</span><div class="sc-desc">Actor/TPL DataFlow、状态-组件-代理三层、热更新机制、部署与端口</div></span></a>
+</div>
+
+<h2 id="layers">3 分层架构（点击节点查看详情）</h2>
+<p>从上到下：业务代码只接触自研层的服务接口；自研层把 GameFrameX 组件包装成服务；GameFrameX 族坐在三个第三方底座上。点击任意节点，下方会显示它的定位与在本项目中的角色。</p>
+
+<div class="demo">
+  <div class="demo-header"><span class="demo-tag">INTERACTIVE</span>架构分层图 · 点击节点</div>
+  <div class="demo-body">
+    <div class="layer-stack" id="layer-stack"></div>
+    <div class="info-panel" id="layer-info"><div class="ip-title">👆 点击上方任意节点</div><p>查看该包的版本、定位与在本项目中扮演的角色。</p></div>
+  </div>
+</div>
+
+<h2 id="packages">4 二十个包总清单</h2>
+<p>按分类筛选，或在表格里搜索。所有包都以源码形式在 <code>Client/Packages/</code> 下，版本即上游 git tag，升级同步方式见 <code>docs/third-party.md</code>。</p>
+
+<div class="demo">
+  <div class="demo-header"><span class="demo-tag">FILTER</span>包清单过滤器</div>
+  <div class="demo-body">
+    <div class="demo-controls" id="pkg-filters">
+      <button class="btn sm primary" data-cat="all">全部 (20)</button>
+      <button class="btn sm" data-cat="own">自研 (2)</button>
+      <button class="btn sm" data-cat="gfx">GameFrameX 族 (14)</button>
+      <button class="btn sm" data-cat="3rd">第三方底座 (4)</button>
+      <input type="text" id="pkg-search" placeholder="搜索包名/职责…" style="padding:5px 10px;border:1px solid var(--border-strong);border-radius:7px;background:var(--bg);color:var(--text);font-size:12.5px;width:200px">
+    </div>
+    <div class="table-wrap" style="margin-top:8px">
+      <table id="pkg-table">
+        <thead><tr><th>包名</th><th>版本</th><th>分类</th><th>职责（一句话）</th><th>许可证</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<h2 id="startup">5 客户端启动时序（点步骤展开细节）</h2>
+<p>从按下 Play 到 <code>GameReady</code>，一共八步。核心编排者是自研的 <code>GameFrameYGameLauncher</code>（VContainer EntryPoint），它要等 GameFrameX 组件宿主就绪后才开始装配模块、启动流程。</p>
+
+<div class="demo">
+  <div class="demo-header"><span class="demo-tag">STEPPER</span>启动时序 · 共 8 步
+    <span style="margin-left:auto;display:flex;gap:6px">
+      <button class="btn sm" id="st-prev">← 上一步</button>
+      <button class="btn sm primary" id="st-play">▶ 自动播放</button>
+      <button class="btn sm" id="st-next">下一步 →</button>
+    </span>
+  </div>
+  <div class="demo-body">
+    <div class="stepper" id="startup-steps"></div>
+  </div>
+</div>
+
+<h2 id="quickstart">6 快速开始</h2>
+<div class="tabs">
+  <div class="tab-btns">
+    <button class="tab-btn active">打开客户端</button>
+    <button class="tab-btn">配置工作流</button>
+    <button class="tab-btn">启动服务端</button>
+  </div>
+  <div class="tab-panel active">
+    <ol>
+      <li>Unity Hub → Open → <code>D:\GameFrameY\Client</code>（无需任何第三方 registry，全部包已 vendored）。</li>
+      <li>打开 <code>Assets/Scenes/Boot.unity</code> → Play（确认它是 Build Settings 第 0 个场景）。</li>
+      <li>Console 过滤 <code>[GameFrameY]</code>，看到下面这段日志即冒烟通过：</li>
+    </ol>
+<pre class="codeblock"><code data-lang="text">[GameFrameY] GameFrameX 组件就绪，开始装配 Bootstrap 模块...
+[GameFrameY] 模块就绪: Event (EventModule) ...（六桥接模块）
+[GameFrameY] 启动流程已开始（Launch → Patch → LoadConfig → EnterGame）
+[GameFrameY] 资源包初始化完成
+[GameFrameY] Luban 配置加载完成：TbItem 6 条，TbServerList 3 条
+[GameFrameY] 模块就绪: Demo (DemoModule)
+[GameFrameY] [Demo] Hello, GameFrameY! 模块装配 → 服务发现 → 解析 全链路 OK
+[GameFrameY] GameFrameY 启动流程完成（GameReady）
+[GameFrameY] [Demo] Tick 心跳 #1（每 3 秒一条）</code></pre>
+  </div>
+  <div class="tab-panel">
+    <p>改配置 = 改 <code>Config/Defines/schema.xml</code>（结构）+ <code>Config/Datas/*.json</code>（数据）→ 跑生成脚本 → 回 Unity 直接生效。需要 .NET SDK 8+（生成器已随仓构建）。</p>
+<pre class="codeblock"><code data-lang="bash">cd Config
+./gen-client.sh    # 生成客户端 cfg 代码 + bytes（Windows 用 gen-client.bat）
+./gen-server.sh    # 生成服务端 GameFrameY.Config 代码 + bytes</code></pre>
+    <div class="code-caption">产物：代码 → Client/Assets/GameFrameY/Config/Generate；bytes → Client/Assets/Bundles/Config（YooAsset 收集）</div>
+    <p>细节见 <a href="config.html">第 07 章 · Luban 配置管线</a>。</p>
+  </div>
+  <div class="tab-panel">
+<pre class="codeblock"><code data-lang="bash">docker compose up -d                 # 根目录：起 MongoDB（mongo:7）
+cd Server
+dotnet run --project GameFrameX.Launcher   # .NET 10 SDK
+# 默认端口：TCP 29100 / HTTP 28080 / WebSocket 29110 / Metrics 29090</code></pre>
+    <p>健康检查 <code>http://localhost:29090/health</code>，指标 <code>/metrics</code>。我们自己的服务端配置库单独可编译：<code>cd Server/Config &amp;&amp; dotnet build</code>。细节见 <a href="server.html">第 08 章</a>。</p>
+  </div>
+</div>
+
+<footer class="pagenav"></footer>
+</main>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+/* ---------------- 分层架构图数据 ---------------- */
+var LAYERS = [
+  { label: "业务层", sub: "Assets/GameFrameY", nodes: [
+    { id: "demo", name: "DemoModule", pkg: "业务模块示例（Deferred）", ver: "—", role: "端到端验证模块：读 Luban 配置、登记服务、每 3 秒 Tick 心跳。是新增业务模块的最佳模板（见 01 章）。" },
+    { id: "cfg-gen", name: "cfg 生成代码", pkg: "Luban 生成（namespace cfg）", ver: "随表生成", role: "Tables / TbItem / Item 等不可变配置类，由 Config/gen-client.* 生成，asmdef 为 GameFrameY.Config。" }
+  ]},
+  { label: "自研框架层", sub: "com.gameframey.*", nodes: [
+    { id: "gfy-core", name: "com.gameframey.core", pkg: "模块管理 + 服务发现 + GameFrameX 桥接", ver: "0.1.0", role: "本仓库核心交付：[GameModule] 自动发现、DFS 拓扑排序、VContainer 链式子作用域、IServiceRegistry 两级查找；并把六个 GameFrameX 组件桥接为服务（见 01 章）。" },
+    { id: "gfy-luban", name: "com.gameframey.luban", pkg: "Luban 配置运行时", ver: "5.1.0", role: "vendored 自 luban src/Luban.Tests/RuntimeSupport：ByteBuf / BeanBase 等反序列化运行时。不用 GameFrameX 的 luban 包是因为其命名空间 LuBan.Runtime 与 v5 生成代码不兼容。" }
+  ]},
+  { label: "GameFrameX 组件层", sub: "com.gameframex.unity.*", nodes: [
+    { id: "gfx-base", name: "com.gameframex.unity", pkg: "组件底座 / 宿主", ver: "3.0.1", role: "GameEntry 组件注册表、[GameFrameX] 宿主自举、GameFrameXOptions 启动配置、Utility 工具族与各模块的 Update 心跳源（见 02 章）。" },
+    { id: "gfx-asset", name: ".asset", pkg: "资源（YooAsset 封装）", ver: "5.0.0", role: "AssetComponent：资源包初始化 / 加载 / 卸载 / 补丁状态机（见 03 章）。" },
+    { id: "gfx-scene", name: ".scene", pkg: "场景（YooAsset）", ver: "3.0.2", role: "SceneComponent：按 Assets/**.unity 路径加载/卸载场景、激活顺序管理（见 04 章）。" },
+    { id: "gfx-ui", name: ".ui + .ui.ugui", pkg: "UI 核心 + UGUI 适配", ver: "3.0.1 / 2.7.2", role: "后端无关的 UI 抽象（UIGroup 层级 / IUIForm 生命周期 / 对象池）+ UGUI 具体实现（见 04 章）。" },
+    { id: "gfx-net", name: ".network", pkg: "通道制网络", ver: "3.0.0", role: "NetworkComponent：命名通道、分包编解码管线、心跳、RPC（见 05 章）。" },
+    { id: "gfx-event", name: ".event", pkg: "事件总线", ver: "2.0.0", role: "字符串 ID 发布订阅、线程安全 Fire、下一帧分发（见 02 章）。" },
+    { id: "gfx-proc", name: ".procedure + .fsm", pkg: "流程 + 状态机", ver: "2.0.0", role: "Procedure 管理器构建在通用 FSM 之上，驱动启动流程链（见 02 章）。" },
+    { id: "gfx-misc", name: ".setting / .mono / .localization / .readassets / .litjson", pkg: "工具组件族", ver: "2.x–3.0", role: "持久化设置（PlayerPrefs 后端可换）、Mono 生命周期桥、本地化字典、StreamingAssets 直读、JSON 序列化（见 02 / 06 章）。" },
+    { id: "gfx-ws", name: ".psygames.unitywebsocket", pkg: "WebSocket 传输", ver: "2.9.3", role: "network 包 WebSocket 通道的底层传输：非 WebGL 用 System.Net，WebGL 用 JSLIB（见 05 章）。" }
+  ]},
+  { label: "第三方底座", sub: "vendored 源码", nodes: [
+    { id: "yooasset", name: "YooAsset (fork)", pkg: "资源管线", ver: "3.2.0", role: "多包资源系统：四种播放模式、收集器、下载器、句柄族。GameFrameX fork（见 03 章）。" },
+    { id: "vcontainer", name: "VContainer", pkg: "依赖注入", ver: "1.19.0", role: "DI 脊柱：根作用域 + 模块链式子作用域 + PlayerLoop EntryPoint 驱动（见 06 章）。" },
+    { id: "unitask", name: "UniTask", pkg: "异步原语", ver: "2.6.2", role: "零分配 async/await：全框架的异步统一返回类型（模块生命周期 / 服务等待 / 资源加载，见 06 章）。" }
+  ]},
+  { label: "运行环境", sub: "Unity 官方源", nodes: [
+    { id: "unity", name: "Unity 2022.3 LTS", pkg: "仅官方 registry 依赖（ugui / SBP 等）", ver: "2022.3.54f1", role: "manifest.json 只依赖 Unity 官方包；所有第三方包都在 Packages/ 目录以 embedded 形式存在，UPM 解析 embedded 优先。" }
+  ]}
+];
+
+(function buildLayers() {
+  var stack = $("#layer-stack"), info = $("#layer-info");
+  LAYERS.forEach(function (layer) {
+    var nodes = layer.nodes.map(function (n) {
+      return el("span", { class: "node-chip", text: n.name, onclick: function () {
+        $$(".node-chip", stack).forEach(function (c) { c.classList.remove("selected"); });
+        this.classList.add("selected");
+        info.innerHTML = '<div class="ip-title"><span class="mono">' + esc(n.name) + '</span><span class="badge b-blue">v' + esc(n.ver) + "</span></div>" +
+          "<p><strong>" + esc(n.pkg) + "</strong></p><p>" + esc(n.role) + "</p>";
+        info.classList.add("flash");
+      }});
+    });
+    stack.appendChild(el("div", { class: "layer-row" }, [
+      el("div", { class: "layer-label" }, [el("div", { text: layer.label }), el("small", { text: layer.sub })]),
+      el("div", { class: "layer-nodes" }, nodes)
+    ]));
+  });
+})();
+
+/* ---------------- 包清单 ---------------- */
+var PKGS = [
+  ["com.gameframey.core", "0.1.0", "own", "自研核心：模块管理（自动发现/拓扑排序/链式子作用域）+ 服务发现 + GameFrameX 桥接", "MIT（本仓库）"],
+  ["com.gameframey.luban", "5.1.0", "own", "Luban 配置运行时（ByteBuf/BeanBase），与 cfg 生成代码配套", "MIT"],
+  ["com.gameframex.unity", "3.0.1", "gfx", "组件底座：GameEntry / 宿主自举 / Options / Utility / 引用池 / 事件池", "MIT / Apache-2.0"],
+  ["com.gameframex.unity.asset", "5.0.0", "gfx", "资源管理（YooAsset 封装）：包初始化 / 加载 / 释放 / 补丁状态机", "MIT / Apache-2.0"],
+  ["com.gameframex.unity.scene", "3.0.2", "gfx", "场景管理（YooAsset）：加载/卸载/激活顺序", "MIT / Apache-2.0"],
+  ["com.gameframex.unity.ui", "3.0.1", "gfx", "UI 核心（后端无关）：UIGroup 层级 / IUIForm / 对象池", "MIT / Apache-2.0"],
+  ["com.gameframex.unity.ui.ugui", "2.7.2", "gfx", "UGUI 适配：prefab 实例化 / 组 Canvas / 代码生成器", "MIT / Apache-2.0"],
+  ["com.gameframex.unity.network", "3.0.0", "gfx", "通道制网络：分包管线 / 心跳 / RPC / 消息分发", "MIT / Apache-2.0"],
+  ["com.gameframex.unity.event", "2.0.0", "gfx", "字符串 ID 事件总线：线程安全 Fire / 下一帧分发 / 幂等订阅", "MIT / Apache-2.0"],
+  ["com.gameframex.unity.procedure", "2.0.0", "gfx", "流程管理（基于 FSM）：启动流程链驱动", "MIT / Apache-2.0"],
+  ["com.gameframex.unity.fsm", "2.0.0", "gfx", "通用有限状态机：黑板数据 / 运行期增删状态", "MIT / Apache-2.0"],
+  ["com.gameframex.unity.setting", "2.0.0", "gfx", "键值持久化设置：PlayerPrefs 默认后端可替换", "MIT / Apache-2.0"],
+  ["com.gameframex.unity.mono", "2.0.0", "gfx", "MonoBehaviour 生命周期桥：Update/Focus/Pause 回调注册", "MIT / Apache-2.0"],
+  ["com.gameframex.unity.localization", "3.0.0", "gfx", "本地化字典：语言切换三段事件 / 17 个强类型 GetString 重载", "MIT / Apache-2.0"],
+  ["com.gameframex.unity.readassets", "1.2.2", "gfx", "StreamingAssets 统一直读（含 Android APK 内条目）", "MIT / Apache-2.0"],
+  ["com.gameframex.unity.litjson", "1.2.4", "gfx", "LitJson 改进版：框架默认 JSON Helper", "MIT / Apache-2.0"],
+  ["com.gameframex.unity.psygames.unitywebsocket", "2.9.3", "gfx", "WebSocket 客户端（System.Net / WebGL JSLIB 双实现）", "MIT / Apache-2.0"],
+  ["com.gameframex.unity.cysharp.unitask", "2.6.2", "3rd", "UniTask：零分配 async/await（Cysharp fork 转发）", "MIT"],
+  ["com.gameframex.unity.tuyoogame.yooasset", "3.2.0", "3rd", "YooAsset：多包资源系统 / 四种播放模式 / 收集器", "Apache-2.0"],
+  ["jp.hadashikick.vcontainer", "1.19.0", "3rd", "VContainer：轻量 DI + PlayerLoop EntryPoint", "MIT"]
+];
+var CAT_LABEL = { own: ["自研", "b-teal"], gfx: ["GameFrameX", "b-amber"], "3rd": ["第三方", "b-purple"] };
+(function buildPkgs() {
+  var tbody = $("#pkg-table tbody");
+  function render(cat, q) {
+    tbody.innerHTML = "";
+    var count = 0;
+    PKGS.forEach(function (p) {
+      if (cat !== "all" && p[2] !== cat) return;
+      if (q && (p[0] + p[3]).toLowerCase().indexOf(q.toLowerCase()) < 0) return;
+      count++;
+      var badge = CAT_LABEL[p[2]];
+      tbody.appendChild(el("tr", {}, [
+        el("td", {}, [el("code", { text: p[0] })]),
+        el("td", {}, [el("span", { class: "badge b-gray", text: p[1] })]),
+        el("td", {}, [el("span", { class: "badge " + badge[1], text: badge[0] })]),
+        el("td", { text: p[3] }),
+        el("td", { text: p[4] })
+      ]));
+    });
+    if (!count) tbody.appendChild(el("tr", {}, [el("td", { colspan: "5", text: "没有匹配的包", style: "text-align:center;color:var(--text-faint)" })]));
+  }
+  $("#pkg-filters").addEventListener("click", function (e) {
+    var btn = e.target.closest("button[data-cat]");
+    if (!btn) return;
+    $$("#pkg-filters button").forEach(function (b) { b.classList.remove("primary"); });
+    btn.classList.add("primary");
+    render(btn.getAttribute("data-cat"), $("#pkg-search").value.trim());
+  });
+  $("#pkg-search").addEventListener("input", function () {
+    var cat = ($("#pkg-filters button.primary") || {}).getAttribute ? $("#pkg-filters button.primary").getAttribute("data-cat") : "all";
+    render(cat || "all", this.value.trim());
+  });
+  render("all", "");
+})();
+
+/* ---------------- 启动时序 stepper ---------------- */
+var STEPS = [
+  { t: "SubsystemRegistration — 静态复位", d: '<code>GameFrameYStartup.ResetStatics()</code> 重置 <code>_rootCreated</code>；GameFrameX 侧同样 Reset 宿主与 Options 静态状态。<strong>目的：关闭 Domain Reload（Enter Play Mode Options）时防静态残留。</strong>', code: "[RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]\nprivate static void ResetStatics() { _rootCreated = false; }", lang: "cs" },
+  { t: "BeforeSceneLoad — 建根作用域", d: '<code>GameFrameYStartup.Bootstrap()</code>：先 <code>GameFrameXOptions.Configure()</code> 注入 AssetOptions（EditorSimulateMode）/ SceneOptions / ProcedureOptions（UseStartupRunner=true，流程由我们自管），再 <code>LifetimeScope.Create(new GameFrameYRootInstaller())</code> 建根容器并 DontDestroyOnLoad。根容器注册四件：IServiceRegistry、GameFrameYLaunchSettings、GameModuleManager 与 GameFrameYGameLauncher 两个 EntryPoint。', code: "var scope = LifetimeScope.Create(new GameFrameYRootInstaller(), \"GameFrameY Root\");\nObject.DontDestroyOnLoad(scope.gameObject);", lang: "cs" },
+  { t: "AfterSceneLoad — GameFrameX 宿主自举", d: 'GameFrameX 扫描 <code>[GameFrameXAutoComponent(order)]</code>，创建常驻 <code>[GameFrameX]</code> GameObject 并按 Order 升序挂 13 个组件：<strong>Base(-10000) → ReferencePool(-9000) → ObjectPool(-8000) → Event(-7000) → FSM(-6000) → Setting(-5000) → Asset(-4000) → Scene(-4000) → Procedure(-1000) → Localization(700) → Mono(900) → Network(1000) → UI(1400)</strong>。场景里不需要手摆任何组件（手摆会被自动注入接管并告警）。', lang: null },
+  { t: "首帧 Startup — 等组件就绪", d: 'VContainer EntryPoint 派发 <code>GameFrameYGameLauncher.StartAsync</code>（IAsyncStartable，Startup 时机）。因为 GameFrameX 宿主在 AfterSceneLoad 才创建（晚于我们的根作用域），这里 <code>await UniTask.WaitUntil(IsGameFrameXReady)</code> 轮询 ProcedureComponent 与 AssetComponent 非空。', code: "await UniTask.WaitUntil(IsGameFrameXReady, cancellationToken: cancellation);\nGfyLog.Info(\"GameFrameX 组件就绪，开始装配 Bootstrap 模块...\");", lang: "cs" },
+  { t: "装配 Bootstrap 模块", d: '<code>InitializeBootstrapModulesAsync()</code>：ModuleScanner 扫描 AppDomain → ModuleDependencyResolver 对<strong>全量模块</strong>做 DFS 拓扑排序，再过滤出 Bootstrap 阶段 → 逐个创建 VContainer 链式子作用域（第 N 个以第 N-1 个为父）→ 先全部 <code>OnInitializeAsync</code> 再按序 <code>OnStartAsync</code>。六个桥接模块的实际装配顺序：<strong>Asset → Config → Network → UI → Scene → Event</strong>（Priority 最小的 Demo(100) 是全量解析的首个种子，把它的依赖 Asset→Config 拉到最前；其余按 Priority 依次装配）。', lang: null },
+  { t: "流程链 Launch → Patch → LoadConfig → EnterGame", d: '<code>ReinitializeProcedures([Launch, Patch, LoadConfig, EnterGame], launch)</code> 后 StartProcedure。Patch 里 <code>DelayFrame(2)</code> 两帧防御等组件自身 Start 完成，再 <code>IAssetService.InitializeAsync</code> 初始化 YooAsset 包；LoadConfig 经 YooAsset 读 Luban bytes 构造 <code>cfg.Tables</code>。', code: "var ok = await asset.InitializeAsync(Settings.PlayMode, Settings.HostUrl, Settings.FallbackHostUrl);\nif (!ok) { GfyLog.Error(\"资源包初始化失败，停留在 Patch 流程等待处理\"); return; }", lang: "cs" },
+  { t: "装配 Deferred 业务模块", d: 'EnterGame 流程调用 <code>InstallDeferredModulesAsync()</code>：装配所有 <code>ModuleStartup.Deferred</code> 的业务模块（当前是 Demo），父作用域是链尾（Event）。Demo 的 OnStartAsync 读配置打印日志、向服务注册表登记 <code>IDemoGreetingService</code>。该入口也预留了热更程序集参数：<code>InstallDeferredModulesAsync(params Assembly[])</code>。', lang: null },
+  { t: "GameReady — 进入稳态", d: '<code>EventComponent.Fire(this, "GameFrameY.GameReady")</code> 广播启动完成；此后 VContainer PlayerLoop 每帧驱动 <code>GameModuleManager</code> 的 Tick / FixedTick / LateTick，泵给所有 Started 状态的模块（Demo 每 3 秒打一条心跳日志）。', lang: null }
+];
+(function buildSteps() {
+  var holder = $("#startup-steps"), cur = 0, timer = null;
+  var nodes = STEPS.map(function (s, i) {
+    var detail = el("div", { class: "step-detail", html: "<p style='margin:0 0 6px'>" + s.d + "</p>" });
+    if (s.code) {
+      var pre = el("pre", { class: "codeblock", style: "margin:8px 0 0;font-size:12px" });
+      var code = el("code", { text: s.code });
+      if (s.lang) code.setAttribute("data-lang", s.lang);
+      pre.appendChild(code);
+      detail.appendChild(pre);
+    }
+    var node = el("div", { class: "step", onclick: function () { go(i, true); } }, [
+      el("div", { class: "step-dot", text: String(i + 1) }),
+      el("div", {}, [el("div", { class: "step-title", text: s.t }), detail])
+    ]);
+    return node;
+  });
+  nodes.forEach(function (n) { holder.appendChild(n); });
+  function go(i, stopAuto) {
+    cur = Math.max(0, Math.min(STEPS.length - 1, i));
+    nodes.forEach(function (n, k) {
+      n.classList.toggle("active", k === cur);
+      n.classList.toggle("done", k < cur);
+    });
+    if (stopAuto && timer) { clearInterval(timer); timer = null; $("#st-play").textContent = "▶ 自动播放"; }
+  }
+  $("#st-prev").addEventListener("click", function () { go(cur - 1, true); });
+  $("#st-next").addEventListener("click", function () { go(cur + 1, true); });
+  $("#st-play").addEventListener("click", function () {
+    if (timer) { clearInterval(timer); timer = null; this.textContent = "▶ 自动播放"; return; }
+    this.textContent = "⏸ 暂停";
+    if (cur >= STEPS.length - 1) go(0);
+    timer = setInterval(function () {
+      if (cur >= STEPS.length - 1) { clearInterval(timer); timer = null; $("#st-play").textContent = "▶ 自动播放"; return; }
+      go(cur + 1);
+    }, 2600);
+  });
+  go(0);
+  enhanceCode();
+})();
+</script>
+</body>
+</html>
