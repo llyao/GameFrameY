@@ -1,0 +1,13 @@
+{
+  "name": "com.gameframey.core",
+  "displayName": "GameFrameY Core",
+  "version": "0.1.0",
+  "unity": "2021.3",
+  "description": "GameFrameY 自研框架层：基于 VContainer 的模块管理（自动发现/依赖拓扑排序/链式子作用域）与服务发现（IServiceRegistry 两级查找 + 动态服务事件）。Bridge 子模块将 GameFrameX 组件（YooAsset 资源/场景/UI/网络/事件）桥接为服务。",
+  "license": "MIT",
+  "category": "GameFrameY",
+  "dependencies": {
+    "jp.hadashikick.vcontainer": "1.19.0",
+    "com.gameframex.unity.cysharp.unitask": "2.6.2"
+  }
+}

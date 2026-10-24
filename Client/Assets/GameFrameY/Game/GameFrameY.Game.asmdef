@@ -1,0 +1,20 @@
+{
+    "name": "GameFrameY.Game",
+    "rootNamespace": "GameFrameY.Game",
+    "references": [
+        "VContainer",
+        "UniTask.Runtime",
+        "GameFrameY.Core",
+        "GameFrameY.Bridge",
+        "GameFrameY.Config"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

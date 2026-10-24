@@ -1,0 +1,9 @@
+{
+  "name": "com.gameframey.luban",
+  "displayName": "GameFrameY Luban Runtime",
+  "version": "5.1.0",
+  "unity": "2021.3",
+  "description": "Luban 配置运行时（vendored from focus-creative-games/luban v5.1.0 src/Luban.Tests/RuntimeSupport，MIT）。与 Config/ 目录生成的 cfg 代码（namespace Luban）配套。不使用 com.gameframex.unity.focus-creative-games.luban 是因为其命名空间为 LuBan.Runtime，与 Luban v5 生成代码不兼容。",
+  "license": "MIT",
+  "category": "GameFrameY"
+}

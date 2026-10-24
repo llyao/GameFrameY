@@ -1,0 +1,5 @@
+{
+  "patchUrl": "http://127.0.0.1:8080/CDN/StandaloneWindows64/v1.0",
+  "fallbackPatchUrl": "http://127.0.0.1:8080/CDN/StandaloneWindows64/v1.0",
+  "hotfixEnabled": false
+}

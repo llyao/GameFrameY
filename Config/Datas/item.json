@@ -1,0 +1,8 @@
+[
+  { "id": 10001, "name": "木剑", "desc": "新手木剑，聊胜于无", "price": 10, "quality": "White", "stackable": true },
+  { "id": 10002, "name": "铁剑", "desc": "标准制式铁剑", "price": 100, "quality": "Green", "stackable": true },
+  { "id": 10003, "name": "秘银法杖", "desc": "附魔秘银法杖，释放更快", "price": 980, "quality": "Blue", "stackable": false },
+  { "id": 10004, "name": "屠龙宝刀", "desc": "一刀999", "price": 99999, "quality": "Orange", "stackable": false },
+  { "id": 20001, "name": "红药水", "desc": "回复50点生命", "price": 5, "quality": "White", "stackable": true },
+  { "id": 20002, "name": "蓝药水", "desc": "回复50点法力", "price": 8, "quality": "White", "stackable": true }
+]

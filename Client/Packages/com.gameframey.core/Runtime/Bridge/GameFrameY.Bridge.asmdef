@@ -1,0 +1,31 @@
+{
+    "name": "GameFrameY.Bridge",
+    "rootNamespace": "GameFrameY.Bridge",
+    "references": [
+        "VContainer",
+        "UniTask.Runtime",
+        "GameFrameY.Core",
+        "GameFrameY.Config",
+        "Luban.Runtime",
+        "GameFrameX.Runtime",
+        "GameFrameX.Entry.Runtime",
+        "GameFrameX.Asset.Runtime",
+        "GameFrameX.Scene.Runtime",
+        "GameFrameX.Event.Runtime",
+        "GameFrameX.Procedure.Runtime",
+        "GameFrameX.FSM.Runtime",
+        "GameFrameX.UI.Runtime",
+        "GameFrameX.Network.Runtime",
+        "YooAsset.Runtime",
+        "YooAsset"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

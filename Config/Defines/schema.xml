@@ -1,0 +1,55 @@
+<module name="">
+    <!-- ==================== 枚举 ==================== -->
+
+    <enum name="ItemQuality">
+        <var name="White" value="0"/>
+        <var name="Green" value="1"/>
+        <var name="Blue" value="2"/>
+        <var name="Purple" value="3"/>
+        <var name="Orange" value="4"/>
+    </enum>
+
+    <enum name="ServerState">
+        <var name="Normal" value="0"/>
+        <var name="Busy" value="1"/>
+        <var name="Maintain" value="2"/>
+    </enum>
+
+    <!-- ==================== Bean ==================== -->
+
+    <bean name="Item" comment="道具配置">
+        <var name="id" type="int" comment="道具ID"/>
+        <var name="name" type="string" comment="名称"/>
+        <var name="desc" type="string" comment="描述"/>
+        <var name="price" type="int" comment="价格"/>
+        <var name="quality" type="ItemQuality" comment="品质"/>
+        <var name="stackable" type="bool" comment="是否可堆叠"/>
+    </bean>
+
+    <bean name="GlobalConfig" comment="全局配置（单例表）">
+        <var name="patchUrl" type="string" comment="资源服务器地址（HostPlayMode 使用）"/>
+        <var name="fallbackPatchUrl" type="string" comment="备用资源服务器地址"/>
+        <var name="hotfixEnabled" type="bool" comment="是否启用热更"/>
+    </bean>
+
+    <bean name="ServerInfo" comment="服务器列表">
+        <var name="id" type="int" comment="服务器ID"/>
+        <var name="name" type="string" comment="服务器名称"/>
+        <var name="host" type="string" comment="主机地址"/>
+        <var name="port" type="int" comment="端口"/>
+        <var name="state" type="ServerState" comment="状态"/>
+    </bean>
+
+    <bean name="RobotName" comment="机器人名字（仅服务端使用，演示 group 过滤）">
+        <var name="id" type="int"/>
+        <var name="name" type="string"/>
+    </bean>
+
+    <!-- ==================== 表 ==================== -->
+    <!-- group: c=客户端  s=服务端；未标注 group 的表默认 c+s 全端导出 -->
+
+    <table name="TbItem" value="Item" input="*@item.json" comment="道具表"/>
+    <table name="TbGlobal" value="GlobalConfig" mode="one" input="global.json" comment="全局配置"/>
+    <table name="TbServerList" value="ServerInfo" input="*@serverlist.json" comment="服务器列表"/>
+    <table name="TbRobotName" value="RobotName" input="*@robotname.json" group="s" comment="机器人名（仅服务端）"/>
+</module>

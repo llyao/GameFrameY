@@ -1,0 +1,62 @@
+# ===== Unity =====
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]serSettings/
+MemoryCaptures/
+Recordings/
+
+*.csproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+sysinfo.txt
+*.apk
+*.aab
+*.unitypackage
+*.app
+
+# Unity 生成的插件目录
+Plugins/Editor/JetBrains*
+
+# Crashlytics
+crashlytics-build.properties
+
+# ===== .NET / Server =====
+bin/
+Obj/
+obj/
+TestResults/
+*.nuget.props
+*.nuget.targets
+.nuget/
+.vs/
+.vscode/
+.idea/
+*.DotSettings.user
+
+# ===== Luban =====
+Config/Tools/*.zip
+Config/Tools/*.7z
+Config/Tools/_luban_src/
+Config/Tools/_examples/
+Config/output_cache/
+
+# 生成物不入库的开关（当前策略：生成物入库，保证开箱可用；如需改为纯生成，解开下行注释）
+# Client/Assets/GameFrameY/Config/Generate/
+# Client/Assets/Bundles/Config/
+
+# ===== 系统 =====
+.DS_Store
+Thumbs.db
+.zcode/

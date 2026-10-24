@@ -1,0 +1,34 @@
+// 示例协议：模块 10（demo）
+// 消息 ID = (moduleId << 16) + seqId，例如 HeartbeatReq = (10 << 16) + 1
+syntax = "proto3";
+
+package game.demo;
+
+option csharp_namespace = "GameFrameY.Proto.Demo";
+
+// 心跳
+message HeartbeatReq {
+    int64 client_time = 1; // 客户端时间戳(毫秒)
+}
+
+message HeartbeatResp {
+    int64 client_time = 1; // 回传
+    int64 server_time = 2; // 服务器时间戳(毫秒)
+}
+
+// 登录
+message LoginReq {
+    string account = 1;
+    string token = 2;
+}
+
+message LoginResp {
+    int32 code = 1;         // 0 = 成功
+    int64 player_id = 2;
+    string nickname = 3;
+}
+
+// 服务器推送：公告
+message NoticeNotify {
+    string content = 1;
+}

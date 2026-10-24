@@ -1,0 +1,31 @@
+# GameFrameY 服务端依赖环境
+# 用法: docker compose up -d
+services:
+  # GameFrameX.Server 持久化依赖（MongoDB 4.x+）
+  mongo:
+    image: mongo:7
+    container_name: gameframey-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    environment:
+      TZ: Asia/Shanghai
+
+  # 可选：GameFrameX.Admin 管理后台依赖，暂不启用时保持注释
+  # postgres:
+  #   image: postgres:16
+  #   container_name: gameframey-postgres
+  #   restart: unless-stopped
+  #   ports:
+  #     - "5432:5432"
+  #   environment:
+  #     POSTGRES_USER: gameframey
+  #     POSTGRES_PASSWORD: gameframey
+  #     POSTGRES_DB: gameframey_admin
+  #   volumes:
+  #     - postgres-data:/var/lib/postgresql/data
+
+volumes:
+  mongo-data:
