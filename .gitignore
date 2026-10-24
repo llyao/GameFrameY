@@ -46,9 +46,9 @@ TestResults/
 *.DotSettings.user
 
 # ===== Luban =====
+# LubanSource/ 是 vendored 全量源码（v5.1.0），入库；构建产物 Luban/ 也入库
 Config/Tools/*.zip
 Config/Tools/*.7z
-Config/Tools/_luban_src/
 Config/Tools/_examples/
 Config/output_cache/
 

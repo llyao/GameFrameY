@@ -16,8 +16,7 @@
         "GameFrameX.FSM.Runtime",
         "GameFrameX.UI.Runtime",
         "GameFrameX.Network.Runtime",
-        "YooAsset.Runtime",
-        "YooAsset"
+        "YooAsset.Runtime"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

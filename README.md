@@ -5,14 +5,19 @@ GameFrameX + YooAsset + Luban + VContainer 的游戏客户端框架单仓，含�
 ```
 GameFrameY/
 ├── Client/          # Unity 2022.3 LTS 工程（自研框架在 Packages/com.gameframey.core）
+│   └── Packages/    #   含 vendored 源码包：YooAsset fork（embedded，优先于 registry）
 ├── Config/          # Luban 配置仓：一份定义，双端生成（客户端 cfg / 服务端 GameFrameY.Config）
+│   └── Tools/       #   LubanSource/ 生成器全量源码(v5.1.0) + Luban/ 构建产物 + build-luban 脚本
 ├── Server/          # GameFrameX.Server 快照（.NET 10，Apache-2.0，来源见 Server/PROVENANCE.md）
 ├── Protobuf/        # proto3 协议（客户端/服务端共用约定）
-├── docs/            # 架构说明（模块体系/服务发现/时序图）
+├── docs/            # 架构说明 + 第三方源码来源（third-party.md）
 └── docker-compose.yml  # MongoDB（服务端依赖）
 ```
 
-技术栈：**GameFrameX**（组件底座，UPM scoped registry）· **YooAsset**（资源，经 AssetComponent）· **Luban v5.1**（配置）· **VContainer**（DI 脊柱）· **UniTask**（异步）。
+技术栈：**GameFrameX**（组件底座，UPM scoped registry）· **YooAsset**（资源，源码内置，经 AssetComponent）· **Luban v5.1**（配置，生成器源码内置）· **VContainer**（DI 脊柱）· **UniTask**（异步）。
+
+> Luban 与 YooAsset 均以**源码**形式随仓库分发（版本、改动与同步方式见 [docs/third-party.md](docs/third-party.md)）；
+> 改 Luban 生成逻辑后跑 `Config/Tools/build-luban.bat|sh` 重出工具，改 YooAsset 源码 Unity 内直接生效。
 
 ## 快速开始
 
