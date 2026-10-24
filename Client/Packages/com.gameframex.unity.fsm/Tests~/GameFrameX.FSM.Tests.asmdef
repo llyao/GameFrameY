@@ -1,0 +1,19 @@
+{
+    "name": "GameFrameX.FSM.Tests",
+    "references": [
+        "GameFrameX.FSM.Runtime",
+        "GameFrameX.Runtime"
+    ],
+    "rootNamespace": "GameFrameX.FSM.Tests",
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

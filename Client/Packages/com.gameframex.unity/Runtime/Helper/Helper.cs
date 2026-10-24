@@ -1,0 +1,93 @@
+﻿// ==========================================================================================
+//  GameFrameX 组织及其衍生项目的版权、商标、专利及其他相关权利
+//  GameFrameX organization and its derivative projects' copyrights, trademarks, patents, and related rights
+//  均受中华人民共和国及相关国际法律法规保护。
+//  are protected by the laws of the People's Republic of China and relevant international regulations.
+// 
+//  使用本项目须严格遵守相应法律法规及开源许可证之规定。
+//  Usage of this project must strictly comply with applicable laws, regulations, and open-source licenses.
+// 
+//  本项目采用 Apache License 2.0 许可证分发，
+//  This project is licensed under the Apache License 2.0,
+//  完整许可证文本请参见源代码根目录下的 LICENSE 文件。
+//  please refer to the LICENSE file in the root directory of the source code for the full license text.
+// 
+//  禁止利用本项目实施任何危害国家安全、破坏社会秩序、
+//  It is prohibited to use this project to engage in any activities that endanger national security, disrupt social order,
+//  侵犯他人合法权益等法律法规所禁止的行为！
+//  or infringe upon the legitimate rights and interests of others, as prohibited by laws and regulations!
+//  因基于本项目二次开发所产生的一切法律纠纷与责任，
+//  Any legal disputes and liabilities arising from secondary development based on this project
+//  本项目组织与贡献者概不承担。
+//  shall be borne solely by the developer; the project organization and contributors assume no responsibility.
+// 
+//  GitHub 仓库：https://github.com/GameFrameX
+//  GitHub Repository: https://github.com/GameFrameX
+//  Gitee  仓库：https://gitee.com/GameFrameX
+//  Gitee Repository:  https://gitee.com/GameFrameX
+//  CNB  仓库：https://cnb.cool/GameFrameX
+//  CNB Repository:  https://cnb.cool/GameFrameX
+//  官方文档：https://gameframex.doc.alianblank.com/
+//  Official Documentation: https://gameframex.doc.alianblank.com/
+// ==========================================================================================
+
+using System;
+using GameFrameX;
+using UnityEngine;
+
+namespace GameFrameX.Runtime
+{
+    /// <summary>
+    /// 辅助器创建器相关的实用函数。
+    /// </summary>
+    /// <remarks>
+    /// Utility functions for helper creators.
+    /// </remarks>
+[UnityEngine.Scripting.Preserve]
+    public static class Helper
+    {
+        /// <summary>
+        /// 创建辅助器。
+        /// </summary>
+        /// <remarks>
+        /// Creates a helper instance.
+        /// </remarks>
+        /// <typeparam name="T">要创建的辅助器类型 / Helper type to create</typeparam>
+        /// <param name="helperFactory">辅助器工厂，返回辅助器实例 / Helper factory that returns the helper instance</param>
+        /// <param name="customHelper">自定义辅助器，非空时优先使用 / Custom helper, takes precedence when not null</param>
+        /// <returns>创建的辅助器 / Created helper instance</returns>
+[UnityEngine.Scripting.Preserve]
+        public static T CreateHelper<T>(Func<T> helperFactory, T customHelper) where T : MonoBehaviour
+        {
+            return CreateHelper(helperFactory, customHelper, 0);
+        }
+
+        /// <summary>
+        /// 创建辅助器。
+        /// </summary>
+        /// <remarks>
+        /// Creates a helper instance.
+        /// </remarks>
+        /// <typeparam name="T">要创建的辅助器类型。 / The type of helper to create.</typeparam>
+        /// <param name="helperFactory">辅助器工厂，返回辅助器实例。 / Helper factory that returns the helper instance.</param>
+        /// <param name="customHelper">自定义辅助器，非空时优先使用。 / Custom helper; used first when not null.</param>
+        /// <param name="index">要创建的辅助器索引。 / Index of the helper to create.</param>
+        /// <returns>创建的辅助器。 / The created helper.</returns>
+[UnityEngine.Scripting.Preserve]
+        public static T CreateHelper<T>(Func<T> helperFactory, T customHelper, int index) where T : MonoBehaviour
+        {
+            if (customHelper != null)
+            {
+                return customHelper.gameObject.InScene() && index <= 0 ? customHelper : UnityEngine.Object.Instantiate(customHelper);
+            }
+
+            if (helperFactory == null)
+            {
+                Log.Warning("You must set custom helper with '{0}' type first.", typeof(T).FullName);
+                return null;
+            }
+
+            return helperFactory();
+        }
+    }
+}

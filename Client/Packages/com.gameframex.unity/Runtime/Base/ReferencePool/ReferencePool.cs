@@ -1,0 +1,299 @@
+﻿// ==========================================================================================
+//  GameFrameX 组织及其衍生项目的版权、商标、专利及其他相关权利
+//  GameFrameX organization and its derivative projects' copyrights, trademarks, patents, and related rights
+//  均受中华人民共和国及相关国际法律法规保护。
+//  are protected by the laws of the People's Republic of China and relevant international regulations.
+// 
+//  使用本项目须严格遵守相应法律法规及开源许可证之规定。
+//  Usage of this project must strictly comply with applicable laws, regulations, and open-source licenses.
+// 
+//  本项目采用 Apache License 2.0 许可证分发，
+//  This project is licensed under the Apache License 2.0,
+//  完整许可证文本请参见源代码根目录下的 LICENSE 文件。
+//  please refer to the LICENSE file in the root directory of the source code for the full license text.
+// 
+//  禁止利用本项目实施任何危害国家安全、破坏社会秩序、
+//  It is prohibited to use this project to engage in any activities that endanger national security, disrupt social order,
+//  侵犯他人合法权益等法律法规所禁止的行为！
+//  or infringe upon the legitimate rights and interests of others, as prohibited by laws and regulations!
+//  因基于本项目二次开发所产生的一切法律纠纷与责任，
+//  Any legal disputes and liabilities arising from secondary development based on this project
+//  本项目组织与贡献者概不承担。
+//  shall be borne solely by the developer; the project organization and contributors assume no responsibility.
+// 
+//  GitHub 仓库：https://github.com/GameFrameX
+//  GitHub Repository: https://github.com/GameFrameX
+//  Gitee  仓库：https://gitee.com/GameFrameX
+//  Gitee Repository:  https://gitee.com/GameFrameX
+//  CNB  仓库：https://cnb.cool/GameFrameX
+//  CNB Repository:  https://cnb.cool/GameFrameX
+//  官方文档：https://gameframex.doc.alianblank.com/
+//  Official Documentation: https://gameframex.doc.alianblank.com/
+// ==========================================================================================
+
+using System;
+using System.Collections.Generic;
+using GameFrameX.Runtime;
+
+namespace GameFrameX.Runtime
+{
+    /// <summary>
+    /// 引用池。
+    /// </summary>
+    /// <remarks>
+    /// Reference pool for managing reusable objects to reduce garbage collection overhead.
+    /// </remarks>
+    public static partial class ReferencePool
+    {
+        private static readonly Dictionary<Type, ReferenceCollection> s_ReferenceCollections = new Dictionary<Type, ReferenceCollection>();
+        private static bool m_EnableStrictCheck = false;
+
+        /// <summary>
+        /// 获取或设置是否开启强制检查。
+        /// </summary>
+        /// <remarks>
+        /// Gets or sets whether strict type checking is enabled for reference operations.
+        /// </remarks>
+        [UnityEngine.Scripting.Preserve]
+        public static bool EnableStrictCheck
+        {
+            get { return m_EnableStrictCheck; }
+            set { m_EnableStrictCheck = value; }
+        }
+
+        /// <summary>
+        /// 获取引用池的数量。
+        /// </summary>
+        /// <remarks>
+        /// Gets the number of reference pools currently managed.
+        /// </remarks>
+        [UnityEngine.Scripting.Preserve]
+        public static int Count
+        {
+            get { return s_ReferenceCollections.Count; }
+        }
+
+        /// <summary>
+        /// 获取所有引用池的信息。
+        /// </summary>
+        /// <remarks>
+        /// Gets information about all reference pools currently managed.
+        /// </remarks>
+        /// <returns>所有引用池的信息。 / Array containing information about all reference pools.</returns>
+        [UnityEngine.Scripting.Preserve]
+        public static ReferencePoolInfo[] GetAllReferencePoolInfos()
+        {
+            int index = 0;
+            ReferencePoolInfo[] results = null;
+
+            lock (s_ReferenceCollections)
+            {
+                results = new ReferencePoolInfo[s_ReferenceCollections.Count];
+                foreach (var referenceCollection in s_ReferenceCollections)
+                {
+                    results[index++] = new ReferencePoolInfo(referenceCollection.Key, referenceCollection.Value.UnusedReferenceCount, referenceCollection.Value.UsingReferenceCount, referenceCollection.Value.AcquireReferenceCount, referenceCollection.Value.ReleaseReferenceCount,
+                                                             referenceCollection.Value.AddReferenceCount, referenceCollection.Value.RemoveReferenceCount);
+                }
+            }
+
+            return results;
+        }
+
+        /// <summary>
+        /// 清除所有引用池。
+        /// </summary>
+        /// <remarks>
+        /// Clears all reference pools and removes all cached references.
+        /// </remarks>
+        [UnityEngine.Scripting.Preserve]
+        public static void ClearAll()
+        {
+            lock (s_ReferenceCollections)
+            {
+                foreach (var referenceCollection in s_ReferenceCollections)
+                {
+                    referenceCollection.Value.RemoveAll();
+                }
+
+                s_ReferenceCollections.Clear();
+            }
+        }
+
+        /// <summary>
+        /// 从引用池获取引用。
+        /// </summary>
+        /// <remarks>
+        /// Acquires a reference from the pool. If the pool is empty, a new instance is created.
+        /// </remarks>
+        /// <typeparam name="T">引用类型。 / The type of reference to acquire.</typeparam>
+        /// <returns>引用。 / The acquired reference instance.</returns>
+        [UnityEngine.Scripting.Preserve]
+        public static T Acquire<T>() where T : class, IReference, new()
+        {
+            return GetReferenceCollection(typeof(T)).Acquire<T>();
+        }
+
+        /// <summary>
+        /// 从引用池获取引用。
+        /// </summary>
+        /// <remarks>
+        /// Acquires a reference from the pool using the specified type. If the pool is empty, a new instance is created.
+        /// </remarks>
+        /// <param name="referenceType">引用类型。 / The type of reference to acquire.</param>
+        /// <returns>引用。 / The acquired reference instance.</returns>
+        [UnityEngine.Scripting.Preserve]
+        public static IReference Acquire(Type referenceType)
+        {
+            InternalCheckReferenceType(referenceType);
+            return GetReferenceCollection(referenceType).Acquire();
+        }
+
+        /// <summary>
+        /// 将引用归还引用池。
+        /// </summary>
+        /// <remarks>
+        /// Returns a reference to the pool for reuse. The reference's Clear method will be called.
+        /// </remarks>
+        /// <param name="reference">引用。 / The reference to release back to the pool.</param>
+        [UnityEngine.Scripting.Preserve]
+        public static void Release(IReference reference)
+        {
+            if (reference == null)
+            {
+                throw new GameFrameworkException("Reference is invalid.");
+            }
+
+            Type referenceType = reference.GetType();
+            InternalCheckReferenceType(referenceType);
+            GetReferenceCollection(referenceType).Release(reference);
+        }
+
+        /// <summary>
+        /// 向引用池中追加指定数量的引用。
+        /// </summary>
+        /// <remarks>
+        /// Adds a specified number of new references to the pool for later use.
+        /// </remarks>
+        /// <typeparam name="T">引用类型。 / The type of reference to add.</typeparam>
+        /// <param name="count">追加数量。 / The number of references to add.</param>
+        [UnityEngine.Scripting.Preserve]
+        public static void Add<T>(int count) where T : class, IReference, new()
+        {
+            GetReferenceCollection(typeof(T)).Add<T>(count);
+        }
+
+        /// <summary>
+        /// 向引用池中追加指定数量的引用。
+        /// </summary>
+        /// <remarks>
+        /// Adds a specified number of new references to the pool for later use.
+        /// </remarks>
+        /// <param name="referenceType">引用类型。 / The type of reference to add.</param>
+        /// <param name="count">追加数量。 / The number of references to add.</param>
+        [UnityEngine.Scripting.Preserve]
+        public static void Add(Type referenceType, int count)
+        {
+            InternalCheckReferenceType(referenceType);
+            GetReferenceCollection(referenceType).Add(count);
+        }
+
+        /// <summary>
+        /// 从引用池中移除指定数量的引用。
+        /// </summary>
+        /// <remarks>
+        /// Removes a specified number of unused references from the pool.
+        /// </remarks>
+        /// <typeparam name="T">引用类型。 / The type of reference to remove.</typeparam>
+        /// <param name="count">移除数量。 / The number of references to remove.</param>
+        [UnityEngine.Scripting.Preserve]
+        public static void Remove<T>(int count) where T : class, IReference
+        {
+            GetReferenceCollection(typeof(T)).Remove(count);
+        }
+
+        /// <summary>
+        /// 从引用池中移除指定数量的引用。
+        /// </summary>
+        /// <remarks>
+        /// Removes a specified number of unused references from the pool.
+        /// </remarks>
+        /// <param name="referenceType">引用类型。 / The type of reference to remove.</param>
+        /// <param name="count">移除数量。 / The number of references to remove.</param>
+        [UnityEngine.Scripting.Preserve]
+        public static void Remove(Type referenceType, int count)
+        {
+            InternalCheckReferenceType(referenceType);
+            GetReferenceCollection(referenceType).Remove(count);
+        }
+
+        /// <summary>
+        /// 从引用池中移除所有的引用。
+        /// </summary>
+        /// <remarks>
+        /// Removes all unused references of the specified type from the pool.
+        /// </remarks>
+        /// <typeparam name="T">引用类型。 / The type of reference to remove.</typeparam>
+        [UnityEngine.Scripting.Preserve]
+        public static void RemoveAll<T>() where T : class, IReference
+        {
+            GetReferenceCollection(typeof(T)).RemoveAll();
+        }
+
+        /// <summary>
+        /// 从引用池中移除所有的引用。
+        /// </summary>
+        /// <remarks>
+        /// Removes all unused references of the specified type from the pool.
+        /// </remarks>
+        /// <param name="referenceType">引用类型。 / The type of reference to remove.</param>
+        [UnityEngine.Scripting.Preserve]
+        public static void RemoveAll(Type referenceType)
+        {
+            InternalCheckReferenceType(referenceType);
+            GetReferenceCollection(referenceType).RemoveAll();
+        }
+
+        private static void InternalCheckReferenceType(Type referenceType)
+        {
+            if (!m_EnableStrictCheck)
+            {
+                return;
+            }
+
+            if (referenceType == null)
+            {
+                throw new GameFrameworkException("Reference type is invalid.");
+            }
+
+            if (!referenceType.IsClass || referenceType.IsAbstract)
+            {
+                throw new GameFrameworkException("Reference type is not a non-abstract class type.");
+            }
+
+            if (!typeof(IReference).IsAssignableFrom(referenceType))
+            {
+                throw new GameFrameworkException(Utility.Text.Format("Reference type '{0}' is invalid.", referenceType.FullName));
+            }
+        }
+
+        private static ReferenceCollection GetReferenceCollection(Type referenceType)
+        {
+            if (referenceType == null)
+            {
+                throw new GameFrameworkException("ReferenceType is invalid.");
+            }
+
+            ReferenceCollection referenceCollection = null;
+            lock (s_ReferenceCollections)
+            {
+                if (!s_ReferenceCollections.TryGetValue(referenceType, out referenceCollection))
+                {
+                    referenceCollection = new ReferenceCollection(referenceType);
+                    s_ReferenceCollections.Add(referenceType, referenceCollection);
+                }
+            }
+
+            return referenceCollection;
+        }
+    }
+}

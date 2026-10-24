@@ -1,0 +1,40 @@
+{
+    "name": "com.gameframex.unity.scene",
+    "displayName": "Game Frame X Scene",
+    "category": "GameFrameX",
+    "description": "GameFrameX Scene — Unity scene management package built on YooAsset. Loads scenes asynchronously returning Task<SceneHandle> with additive mode support, unloads scenes, tracks loaded / loading / unloading states, orders the active scene through scene priorities, and refreshes the main camera reference, with load success / update (duration) / failure and unload events dispatched through the event bus. Startup moves to code-level SceneOptions (GameFrameXOptions.Configure: load-update and dependency-asset event toggles). Docs: https://gameframex.doc.alianblank.com\n\nGameFrameX Scene — 基于 YooAsset 的 Unity 场景管理功能包。异步加载场景返回 Task<SceneHandle>（支持叠加模式）、卸载场景、跟踪已加载/加载中/卸载中状态、按场景优先级排序活跃场景并刷新主相机引用；加载成功/更新（耗时）/失败与卸载事件均经事件总线分发。启动配置收敛为代码级 SceneOptions（GameFrameXOptions.Configure：加载更新与依赖资源事件开关）。文档：https://gameframex.doc.alianblank.com",
+    "version": "3.0.2",
+    "unity": "2019.4",
+    "keywords": [
+        "GameFrameX",
+        "Scene"
+    ],
+    "repository": {
+        "name": "com.gameframex.unity.scene",
+        "url": "git+https://github.com/gameframex/com.gameframex.unity.scene.git",
+        "type": "git"
+    },
+    "author": {
+        "name": "Blank",
+        "email": "alianblank@outlook.com",
+        "url": "https://gameframex.doc.alianblank.com"
+    },
+    "dependencies": {
+        "com.gameframex.unity.asset": "5.0.0",
+        "com.gameframex.unity.event": "2.0.0",
+        "com.gameframex.unity": "3.0.0",
+        "com.gameframex.unity.tuyoogame.yooasset": "3.1.0"
+    },
+    "devDependencies": {
+        "semantic-release": "^24.2.0",
+        "@semantic-release/changelog": "^6.0.3",
+        "@semantic-release/git": "^10.0.1"
+    },
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://npm.cnb.cool/GameFrameX/npm/-/packages/"
+    },
+    "documentationUrl": "https://gameframex.doc.alianblank.com",
+    "changelogUrl": "https://github.com/gameframex/com.gameframex.unity.scene/blob/main/CHANGELOG.md",
+    "licensesUrl": "https://github.com/gameframex/com.gameframex.unity.scene/blob/main/LICENSE.md"
+}

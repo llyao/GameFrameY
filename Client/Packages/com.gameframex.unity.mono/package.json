@@ -1,0 +1,38 @@
+{
+    "name": "com.gameframex.unity.mono",
+    "displayName": "Game Frame X Mono",
+    "category": "GameFrameX",
+    "documentationUrl": "https://gameframex.doc.alianblank.com",
+    "changelogUrl": "https://github.com/gameframex/com.gameframex.unity.mono/blob/main/CHANGELOG.md",
+    "licensesUrl": "https://github.com/gameframex/com.gameframex.unity.mono/blob/main/LICENSE.md",
+    "description": "GameFrameX Mono — Unity MonoBehaviour lifecycle bridge package. Exposes Update, FixedUpdate, LateUpdate, Destroy, OnApplicationPause and OnApplicationFocus to non-MonoBehaviour systems through a listener registration pattern; focus/pause changes are additionally broadcast as pooled event args through the event bus. Listener exceptions are isolated so one failing callback never blocks the rest. The component stays a thin forwarding entry; the module is reachable directly via GetModule<T>() / GameApp.Mono. Docs: https://gameframex.doc.alianblank.com\n\nGameFrameX Mono — Unity MonoBehaviour 生命周期桥接功能包。通过监听器注册模式将 Update、FixedUpdate、LateUpdate、Destroy、OnApplicationPause 与 OnApplicationFocus 暴露给非 MonoBehaviour 系统，焦点/暂停变化同时以池化事件参数经事件总线广播。监听器异常相互隔离，单个回调出错不阻断其余回调。组件保留为纯转发薄入口，模块可经 GetModule<T>() / GameApp.Mono 直达。文档：https://gameframex.doc.alianblank.com",
+    "version": "2.0.0",
+    "unity": "2019.4",
+    "keywords": [
+        "GameFrameX",
+        "Mono"
+    ],
+    "repository": {
+        "name": "com.gameframex.unity.mono",
+        "url": "git+https://github.com/gameframex/com.gameframex.unity.mono.git",
+        "type": "git"
+    },
+    "author": {
+        "name": "Blank",
+        "email": "alianblank@outlook.com",
+        "url": "https://gameframex.doc.alianblank.com"
+    },
+    "dependencies": {
+        "com.gameframex.unity.event": "2.0.0",
+        "com.gameframex.unity": "3.0.0"
+    },
+    "devDependencies": {
+        "semantic-release": "^24.2.0",
+        "@semantic-release/changelog": "^6.0.3",
+        "@semantic-release/git": "^10.0.1"
+    },
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://npm.cnb.cool/GameFrameX/npm/-/packages/"
+    }
+}

@@ -1,0 +1,314 @@
+## [3.0.1](https://github.com/gameframex/com.gameframex.unity.ui/compare/3.0.0...3.0.1) (2026-10-15)
+
+
+### Bug Fixes
+
+* **dependencies:** asset 依赖升至 5.0.0 ([22a2719](https://github.com/gameframex/com.gameframex.unity.ui/commit/22a2719ef000ede8aaa14dddb1e5fabefc423149))
+
+# [3.0.0](https://github.com/gameframex/com.gameframex.unity.ui/compare/2.11.2...3.0.0) (2026-10-15)
+
+
+* feat(ui)!: 界面模块薄入口化并新增 UIOptions 与后端注册表 ([62854c5](https://github.com/gameframex/com.gameframex.unity.ui/commit/62854c5ede915b84a17528b8d074d45b7d3f7c59))
+
+
+### BREAKING CHANGES
+
+* 组件序列化字段移除，编辑期配置入口收敛到代码 UIOptions；Helper 选择方式变更。
+
+## [Unreleased]
+
+### ⚠ BREAKING CHANGES
+
+* **ui:** 新增 `UIOptions` 启动配置（`GameFrameXOptions.Configure`，首场景加载前注入；字段默认值同原 Inspector 序列化默认）
+* **ui:** 组件值参数序列化字段移除，编辑期配置入口收敛到代码 Options；Play 期经活视图 / 模块 API 调整
+* **ui:** Helper 实现选择从类型名字符串改为 `Func` 工厂闭包（Custom 引用优先）；UI Helper 后端（FairyGUI / UGUI）改为后端注册表自注册默认实现
+
+### Features
+
+* **ui:** `UIForm.Name` 改为 `virtual`，允许派生界面（如 FairyGUI `FUI`）重写名称设置以同步双端命名
+
+# [3.0.0](https://github.com/gameframex/com.gameframex.unity.ui/compare/2.11.2...3.0.0) (2026-10-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* **module:** 模块契约全接口化：删除 `GameFrameworkModule` 抽象基类，改为 `IGameFrameworkModule` 标记接口 + 可选能力接口
+
+**新契约形态与迁移对照：**
+
+| 旧基类成员 | 新契约 | 迁移方式 |
+|---|---|---|
+| `: GameFrameworkModule` | `IGameFrameworkModule` | 声明处直接替换（标记接口，可注册进 `GameFrameworkEntry`） |
+| `override void Update(float, float)` | `IUpdatableModule` | 真实实现改 `public`；空实现删除（未实现者不再被轮询） |
+| `override void Shutdown()` | `IShutdownableModule` | 真实实现改 `public`；空实现删除（未实现者不再被关闭） |
+| `override int Priority` | `IPrioritizedModule` | 改 `public int Priority { get; }`；未实现视为 0 |
+
+本包变更：`BaseUIManager` 实现 `IUpdatableModule`、`IShutdownableModule`（ugui / fairygui 派生类经继承自动获得能力）。
+
+`GameFrameworkEntry.Update` 仅分派 `IUpdatableModule`；`Shutdown` 按优先级反序仅分派 `IShutdownableModule`；tick 与关闭顺序与旧实现完全一致。能力方法仅由宿主入口调用，业务侧继续通过 `GetModule<IXxxManager>()` 访问模块。
+
+## [2.11.2](https://github.com/gameframex/com.gameframex.unity.ui/compare/2.11.1...2.11.2) (2026-08-24)
+
+
+### Bug Fixes
+
+* **ui:** 修正 UIFormInstanceObject 初始化传入资产名 ([ea04a3c](https://github.com/gameframex/com.gameframex.unity.ui/commit/ea04a3c98231198992515aeae79d3644d597c2ce))
+
+## [2.11.1](https://github.com/gameframex/com.gameframex.unity.ui/compare/2.11.0...2.11.1) (2026-07-30)
+
+
+### Bug Fixes
+
+* **dependencies:** 更新依赖项版本以提高兼容性和功能 ([f5edf8c](https://github.com/gameframex/com.gameframex.unity.ui/commit/f5edf8cb646a54a25366940a5fa3c0c57ef62778))
+
+# [2.11.0](https://github.com/gameframex/com.gameframex.unity.ui/compare/2.10.6...2.11.0) (2026-07-03)
+
+
+### Bug Fixes
+
+* **ui:** UI 分组创建切换使用 EnsureUGUIRoot/EnsureFairyGUIRoot ([2c93c2a](https://github.com/gameframex/com.gameframex.unity.ui/commit/2c93c2a9859e9bab8fc93d57f0e7c60574100e5f))
+
+
+### Features
+
+* **ui:** 新增 UIDesignResolutionComponent 并接入 UIComponent ([4eb1159](https://github.com/gameframex/com.gameframex.unity.ui/commit/4eb11592088d2bb6bc4d5c2b15638af4e4ba1a5c))
+
+## [2.10.6](https://github.com/gameframex/com.gameframex.unity.ui/compare/2.10.5...2.10.6) (2026-06-16)
+
+
+### Bug Fixes
+
+* **ui:** 修复事件参数直接传递引用导致引用失效的问题 ([9529659](https://github.com/gameframex/com.gameframex.unity.ui/commit/9529659caa236b36474eabfc14c5bc844c3a9d2c))
+
+## [2.10.5](https://github.com/gameframex/com.gameframex.unity.ui/compare/2.10.4...2.10.5) (2026-06-08)
+
+
+### Bug Fixes
+
+* **ui:** 修复事件参数直接传递引用导致引用失效的问题 ([3de2194](https://github.com/gameframex/com.gameframex.unity.ui/commit/3de2194e411b1bf15a2ae38dfb4d97696dd272a1))
+
+## [2.10.4](https://github.com/gameframex/com.gameframex.unity.ui/compare/2.10.3...2.10.4) (2026-06-07)
+
+
+### Bug Fixes
+
+* 补全包规范文件（LICENSE/CHANGELOG/URL 字段/unity 字段） ([058eda3](https://github.com/gameframex/com.gameframex.unity.ui/commit/058eda36be097f9e5e351c4cea26e6a0ea8e9853))
+
+## [2.10.3](https://github.com/gameframex/com.gameframex.unity.ui/compare/2.10.2...2.10.3) (2026-06-05)
+
+
+### Bug Fixes
+
+* **ui:** 将 OptionUIAllowMultiInstanceAttribute 默认值改为 true ([b0290fe](https://github.com/gameframex/com.gameframex.unity.ui/commit/b0290fe533ffcd0dc5ded3998c4afea7129e7bf2))
+
+## [2.10.2](https://github.com/gameframex/com.gameframex.unity.ui/compare/2.10.1...2.10.2) (2026-05-28)
+
+
+### Bug Fixes
+
+* **ui:** 修复 OnClose 中潜在的空引用异常 ([3a0bd98](https://github.com/gameframex/com.gameframex.unity.ui/commit/3a0bd982af8e61536c77486267d00f08304a77d3))
+
+## [2.10.1](https://github.com/gameframex/com.gameframex.unity.ui/compare/2.10.0...2.10.1) (2026-05-28)
+
+
+### Bug Fixes
+
+* **ci:** 统一 .github 工作流配置 ([7cd823b](https://github.com/gameframex/com.gameframex.unity.ui/commit/7cd823b0708fca122fa4b5a6fa752d561412f5fd))
+
+# [2.10.0](https://github.com/gameframex/com.gameframex.unity.ui/compare/2.9.0...2.10.0) (2026-04-30)
+
+
+### Features
+
+* **UI:** 添加界面单实例打开模式 ([f87b455](https://github.com/gameframex/com.gameframex.unity.ui/commit/f87b455bb14dac413fb5d202db26ff4465621baf))
+
+# [2.9.0](https://github.com/gameframex/com.gameframex.unity.ui/compare/2.8.0...2.9.0) (2026-04-01)
+
+
+### Bug Fixes
+
+* **ui:** 为UI模块添加代码裁剪支持 ([d4d706d](https://github.com/gameframex/com.gameframex.unity.ui/commit/d4d706de495b6fc517cef9232c5c2ae0bafffa1e))
+
+
+### Features
+
+* **UI:** 添加自动回收界面功能开关 ([5f1b03e](https://github.com/gameframex/com.gameframex.unity.ui/commit/5f1b03e9c46c192789b33da9961f92166da52220))
+
+# [2.8.0](https://github.com/gameframex/com.gameframex.unity.ui/compare/2.7.0...2.8.0) (2026-03-27)
+
+
+### Bug Fixes
+
+* **UI:** 修复文件末尾缺少换行符和初始化问题 ([9d5d6b4](https://github.com/gameframex/com.gameframex.unity.ui/commit/9d5d6b495c39c54547f64d2f959c68a42f88b76a))
+
+
+### Features
+
+* **UI:** 为UI系统添加资源路径和名称参数支持 ([3cb3f03](https://github.com/gameframex/com.gameframex.unity.ui/commit/3cb3f036387086eab5d9c36135b1ddb42a70e026))
+
+# [2.7.0](https://github.com/gameframex/com.gameframex.unity.ui/compare/2.6.0...2.7.0) (2026-03-06)
+
+
+### Features
+
+* **UI:** 为ReleaseUIForm方法添加uiFormAssetPath参数 ([01cda73](https://github.com/gameframex/com.gameframex.unity.ui/commit/01cda736475abb879a9592351c891af2ec89b58f))
+
+# [2.6.0](https://github.com/gameframex/com.gameframex.unity.ui/compare/2.5.0...2.6.0) (2026-03-05)
+
+
+### Features
+
+* **UI:** 为OptionUIConfigAttribute添加IsResource属性 ([722ef2b](https://github.com/gameframex/com.gameframex.unity.ui/commit/722ef2bca53f0b055a1506ec2a09495ec212c986))
+
+# [2.5.0](https://github.com/gameframex/com.gameframex.unity.ui/compare/2.4.0...2.5.0) (2026-03-05)
+
+
+### Features
+
+* **UI:** 向IUIGroupHelper接口添加Depth属性并修改Handler方法签名 ([5268526](https://github.com/gameframex/com.gameframex.unity.ui/commit/52685264470c04cfd8d0da9385b68e8887cedd31))
+
+# [2.4.0](https://github.com/gameframex/com.gameframex.unity.ui/compare/2.3.1...2.4.0) (2026-03-02)
+
+
+### Features
+
+* **UI:** 添加UGUI和FairyGUI根节点属性 ([5718a44](https://github.com/gameframex/com.gameframex.unity.ui/commit/5718a448124c2e8f5c170ec27f6de873d79b756e))
+
+## [2.3.1](https://github.com/gameframex/com.gameframex.unity.ui/compare/2.3.0...2.3.1) (2026-01-08)
+
+
+### Bug Fixes
+
+* **UIForm:** 在OnClose方法中添加gameObject空检查 ([de70843](https://github.com/gameframex/com.gameframex.unity.ui/commit/de70843de677947729e48d70608eeeaebf727e9b))
+
+# [2.3.0](https://github.com/gameframex/com.gameframex.unity.ui/compare/2.2.0...2.3.0) (2026-01-05)
+
+
+### Features
+
+* **UI组件:** 添加根据类型获取已加载UI的方法 ([21b63ac](https://github.com/gameframex/com.gameframex.unity.ui/commit/21b63ac515fff5217115e4afbe1f7fda8b3b56a6))
+
+# [2.2.0](https://github.com/gameframex/com.gameframex.unity.ui/compare/2.1.1...2.2.0) (2025-12-23)
+
+
+### Bug Fixes
+
+* **UIForm:** 添加OnAwake调用以确保初始化完成 ([5122c3d](https://github.com/gameframex/com.gameframex.unity.ui/commit/5122c3d3d0960375f00ae182c89460571ab96e04))
+* **UI:** 修复关闭UI表单时未从待释放列表移除的问题 ([848fc83](https://github.com/gameframex/com.gameframex.unity.ui/commit/848fc837dac196d42126f3c0ea731469664e55b6))
+* **UI:** 初始化时添加缺失的成员变量默认值 ([f1835ef](https://github.com/gameframex/com.gameframex.unity.ui/commit/f1835ef8926bc3eec5bfbf3dba5a0089a4db90cb))
+* **UI:** 将异常抛出改为日志记录并添加提前返回 ([f24cb5f](https://github.com/gameframex/com.gameframex.unity.ui/commit/f24cb5f6dc7e38eb31603cac10e064b995242367))
+* **UI:** 添加异常处理以防止UI表单回收时崩溃 ([e895fcf](https://github.com/gameframex/com.gameframex.unity.ui/commit/e895fcf34c481bc17f16f744da46e88cb189d609))
+* 修正获取OptionUIConfigAttribute时的类型错误 ([231c2cf](https://github.com/gameframex/com.gameframex.unity.ui/commit/231c2cf63e4348f3a4949f7aa96d04dcd22a9f43))
+
+
+### Features
+
+* **UI:** 为动画属性添加简化构造函数 ([68b651a](https://github.com/gameframex/com.gameframex.unity.ui/commit/68b651af8aa551089f2fbcaae3e0573000bf5f71))
+* **UI:** 为界面释放功能添加资源句柄参数 ([06dfb80](https://github.com/gameframex/com.gameframex.unity.ui/commit/06dfb80ec5d43639ad5bf4344d709e239c934623))
+* **UI:** 为界面释放功能添加资源句柄参数 ([4d1446c](https://github.com/gameframex/com.gameframex.unity.ui/commit/4d1446c186c50b3ce1fe07c3180e014e55817f35))
+* **UI:** 添加UIFormLoadingObject类用于管理界面加载 ([f751a76](https://github.com/gameframex/com.gameframex.unity.ui/commit/f751a76d1e95f2586e5d3f7060a31f24b7fa03e0))
+* **UI:** 添加UI开启动画和关闭动画特性属性 ([7536e6a](https://github.com/gameframex/com.gameframex.unity.ui/commit/7536e6aefea371ce1a6f75fa92587d430b49e1ad))
+* **UI:** 添加回收界面到实例池的方法 ([a53e0f0](https://github.com/gameframex/com.gameframex.unity.ui/commit/a53e0f097629c24a06c60b4198f84e3ac35b128e))
+* **UI:** 添加界面回收功能 ([0144068](https://github.com/gameframex/com.gameframex.unity.ui/commit/014406837389e4c9d6580730e967ebd3443bf2fa))
+* **UI:** 添加界面实例回收至对象池的配置选项 ([aed194a](https://github.com/gameframex/com.gameframex.unity.ui/commit/aed194a9017ee86e353007efe1501700384264cf))
+* **UI:** 添加界面显示和隐藏动画支持 ([e3c83c0](https://github.com/gameframex/com.gameframex.unity.ui/commit/e3c83c0c217d207ddf035a3a0adb75129686f33c))
+* **UI:** 添加界面显示和隐藏动画的开关功能 ([31d6bf9](https://github.com/gameframex/com.gameframex.unity.ui/commit/31d6bf926aacf9e94418ef8a4685d67cecf9719c))
+* **UI:** 添加选项UI分组和配置特性 ([8655d72](https://github.com/gameframex/com.gameframex.unity.ui/commit/8655d72a0108e7dd85b7b3623cd9877ac5c14a18))
+* **UI:** 添加释放所有已加载界面的功能 ([9aa4d9b](https://github.com/gameframex/com.gameframex.unity.ui/commit/9aa4d9b26fd991582453ac6b70f3013fdd367d20))
+* **UI:** 添加释放所有已加载界面的功能 ([03643ab](https://github.com/gameframex/com.gameframex.unity.ui/commit/03643ab7737109a0a6718e2f75c31afec18ece0a))
+* **UI组件:** 为关闭所有界面方法添加立即回收参数 ([a00ecc3](https://github.com/gameframex/com.gameframex.unity.ui/commit/a00ecc38b3b3efee6255feb0abe249695b44d69c))
+
+# Changelog
+
+## [2.1.1](https://github.com/GameFrameX/com.gameframex.unity.ui/tree/2.1.1) (2025-10-27)
+
+[Full Changelog](https://github.com/GameFrameX/com.gameframex.unity.ui/compare/2.1.0...2.1.1)
+
+## [2.1.0](https://github.com/GameFrameX/com.gameframex.unity.ui/tree/2.1.0) (2025-09-17)
+
+[Full Changelog](https://github.com/GameFrameX/com.gameframex.unity.ui/compare/2.0.0...2.1.0)
+
+## [2.0.0](https://github.com/GameFrameX/com.gameframex.unity.ui/tree/2.0.0) (2025-06-12)
+
+[Full Changelog](https://github.com/GameFrameX/com.gameframex.unity.ui/compare/1.2.7...2.0.0)
+
+## [1.2.7](https://github.com/GameFrameX/com.gameframex.unity.ui/tree/1.2.7) (2025-06-11)
+
+[Full Changelog](https://github.com/GameFrameX/com.gameframex.unity.ui/compare/1.2.6...1.2.7)
+
+## [1.2.6](https://github.com/GameFrameX/com.gameframex.unity.ui/tree/1.2.6) (2025-06-11)
+
+[Full Changelog](https://github.com/GameFrameX/com.gameframex.unity.ui/compare/1.2.5...1.2.6)
+
+## [1.2.5](https://github.com/GameFrameX/com.gameframex.unity.ui/tree/1.2.5) (2025-05-31)
+
+[Full Changelog](https://github.com/GameFrameX/com.gameframex.unity.ui/compare/1.2.4...1.2.5)
+
+## [1.2.4](https://github.com/GameFrameX/com.gameframex.unity.ui/tree/1.2.4) (2025-05-30)
+
+[Full Changelog](https://github.com/GameFrameX/com.gameframex.unity.ui/compare/1.2.3...1.2.4)
+
+## [1.2.3](https://github.com/GameFrameX/com.gameframex.unity.ui/tree/1.2.3) (2025-04-15)
+
+[Full Changelog](https://github.com/GameFrameX/com.gameframex.unity.ui/compare/1.2.2...1.2.3)
+
+## [1.2.2](https://github.com/GameFrameX/com.gameframex.unity.ui/tree/1.2.2) (2025-04-09)
+
+[Full Changelog](https://github.com/GameFrameX/com.gameframex.unity.ui/compare/1.2.1...1.2.2)
+
+**Closed issues:**
+
+- UIComponent.Open的OpenAsync能否开放pauseCoveredUIForm参数 [\#2](https://github.com/GameFrameX/com.gameframex.unity.ui/issues/2)
+- UI回收后从对象池再次打开时 m\_SerialId等参数没有重置 [\#1](https://github.com/GameFrameX/com.gameframex.unity.ui/issues/1)
+
+## [1.2.1](https://github.com/GameFrameX/com.gameframex.unity.ui/tree/1.2.1) (2025-03-14)
+
+[Full Changelog](https://github.com/GameFrameX/com.gameframex.unity.ui/compare/1.2.0...1.2.1)
+
+## [1.2.0](https://github.com/GameFrameX/com.gameframex.unity.ui/tree/1.2.0) (2025-03-14)
+
+[Full Changelog](https://github.com/GameFrameX/com.gameframex.unity.ui/compare/1.1.0...1.2.0)
+
+## [1.1.0](https://github.com/GameFrameX/com.gameframex.unity.ui/tree/1.1.0) (2025-02-05)
+
+[Full Changelog](https://github.com/GameFrameX/com.gameframex.unity.ui/compare/1.0.8...1.1.0)
+
+## [1.0.8](https://github.com/GameFrameX/com.gameframex.unity.ui/tree/1.0.8) (2025-01-14)
+
+[Full Changelog](https://github.com/GameFrameX/com.gameframex.unity.ui/compare/1.0.7...1.0.8)
+
+## [1.0.7](https://github.com/GameFrameX/com.gameframex.unity.ui/tree/1.0.7) (2025-01-13)
+
+[Full Changelog](https://github.com/GameFrameX/com.gameframex.unity.ui/compare/1.0.6...1.0.7)
+
+## [1.0.6](https://github.com/GameFrameX/com.gameframex.unity.ui/tree/1.0.6) (2024-12-16)
+
+[Full Changelog](https://github.com/GameFrameX/com.gameframex.unity.ui/compare/1.0.5...1.0.6)
+
+## [1.0.5](https://github.com/GameFrameX/com.gameframex.unity.ui/tree/1.0.5) (2024-12-07)
+
+[Full Changelog](https://github.com/GameFrameX/com.gameframex.unity.ui/compare/1.0.4...1.0.5)
+
+## [1.0.4](https://github.com/GameFrameX/com.gameframex.unity.ui/tree/1.0.4) (2024-11-08)
+
+[Full Changelog](https://github.com/GameFrameX/com.gameframex.unity.ui/compare/1.0.3...1.0.4)
+
+## [1.0.3](https://github.com/GameFrameX/com.gameframex.unity.ui/tree/1.0.3) (2024-10-09)
+
+[Full Changelog](https://github.com/GameFrameX/com.gameframex.unity.ui/compare/1.0.2...1.0.3)
+
+## [1.0.2](https://github.com/GameFrameX/com.gameframex.unity.ui/tree/1.0.2) (2024-10-09)
+
+[Full Changelog](https://github.com/GameFrameX/com.gameframex.unity.ui/compare/1.0.1...1.0.2)
+
+## [1.0.1](https://github.com/GameFrameX/com.gameframex.unity.ui/tree/1.0.1) (2024-09-27)
+
+[Full Changelog](https://github.com/GameFrameX/com.gameframex.unity.ui/compare/1.0.0...1.0.1)
+
+## [1.0.0](https://github.com/GameFrameX/com.gameframex.unity.ui/tree/1.0.0) (2024-09-09)
+
+[Full Changelog](https://github.com/GameFrameX/com.gameframex.unity.ui/compare/4903db5fbd4e15c81798c0a4bb9f84936d302860...1.0.0)
+
+
+
+\* *This Changelog was automatically generated by [github_changelog_generator](https://github.com/github-changelog-generator/github-changelog-generator)*

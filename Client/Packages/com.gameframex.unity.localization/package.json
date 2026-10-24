@@ -1,0 +1,40 @@
+{
+    "name": "com.gameframex.unity.localization",
+    "displayName": "Game Frame X Localization",
+    "category": "GameFrameX",
+    "description": "GameFrameX Localization — Unity localization package. Manages language dictionaries loaded asynchronously with success / update / failure events, switches the current language at runtime (persisted through the Setting module and announced via before / on / after change events), and serves GetString with up to 16 typed format arguments. Startup moves to code-level LocalizationOptions (GameFrameXOptions.Configure: default and editor language, helper factory); startup-only fields reject runtime writes with a warning. Docs: https://gameframex.doc.alianblank.com\n\nGameFrameX Localization — Unity 本地化功能包。异步加载语言字典并发布成功/更新/失败事件，运行时切换当前语言（经 Setting 模块持久化，并以切换前/切换中/切换后三段事件广播），GetString 支持最多 16 个类型化格式化参数。启动配置收敛为代码级 LocalizationOptions（GameFrameXOptions.Configure：默认语言、编辑器语言、Helper 工厂）；启动期型字段运行期写入将被拒绝并告警。文档：https://gameframex.doc.alianblank.com",
+    "version": "3.0.0",
+    "unity": "2019.4",
+    "keywords": [
+        "GameFrameX",
+        "Localization"
+    ],
+    "repository": {
+        "name": "com.gameframex.unity.localization",
+        "url": "git+https://github.com/gameframex/com.gameframex.unity.localization.git",
+        "type": "git"
+    },
+    "author": {
+        "name": "Blank",
+        "email": "alianblank@outlook.com",
+        "url": "https://gameframex.doc.alianblank.com"
+    },
+    "dependencies": {
+        "com.gameframex.unity": "3.0.0",
+        "com.gameframex.unity.asset": "4.0.0",
+        "com.gameframex.unity.event": "2.0.0",
+        "com.gameframex.unity.setting": "2.0.0"
+    },
+    "devDependencies": {
+        "semantic-release": "^24.2.0",
+        "@semantic-release/changelog": "^6.0.3",
+        "@semantic-release/git": "^10.0.1"
+    },
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://npm.cnb.cool/GameFrameX/npm/-/packages/"
+    },
+    "documentationUrl": "https://gameframex.doc.alianblank.com",
+    "changelogUrl": "https://github.com/gameframex/com.gameframex.unity.localization/blob/main/CHANGELOG.md",
+    "licensesUrl": "https://github.com/gameframex/com.gameframex.unity.localization/blob/main/LICENSE.md"
+}

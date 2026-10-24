@@ -1,0 +1,21 @@
+{
+    "name": "GameFrameX.Tests",
+    "references": [
+        "GameFrameX.Runtime",
+        "GameFrameX.LitJSON.Runtime",
+        "GameFrameX.Editor"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": true,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "GameFrameX.LateAssemblyEmitSupport.dll"
+    ],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

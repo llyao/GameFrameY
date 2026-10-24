@@ -1,0 +1,179 @@
+// ==========================================================================================
+//   GameFrameX 组织及其衍生项目的版权、商标、专利及其他相关权利
+//   GameFrameX organization and its derivative projects' copyrights, trademarks, patents, and related rights
+//   均受中华人民共和国及相关国际法律法规保护。
+//   are protected by the laws of the People's Republic of China and relevant international regulations.
+//   使用本项目须严格遵守相应法律法规及开源许可证之规定。
+//   Usage of this project must strictly comply with applicable laws, regulations, and open-source licenses.
+//   本项目采用 MIT 许可证与 Apache License 2.0 双许可证分发，
+//   This project is dual-licensed under the MIT License and Apache License 2.0,
+//   完整许可证文本请参见源代码根目录下的 LICENSE 文件。
+//   please refer to the LICENSE file in the root directory of the source code for the full license text.
+//   禁止利用本项目实施任何危害国家安全、破坏社会秩序、
+//   It is prohibited to use this project to engage in any activities that endanger national security, disrupt social order,
+//   侵犯他人合法权益等法律法规所禁止的行为！
+//   or infringe upon the legitimate rights and interests of others, as prohibited by laws and regulations!
+//   因基于本项目二次开发所产生的一切法律纠纷与责任，
+//   Any legal disputes and liabilities arising from secondary development based on this project
+//   本项目组织与贡献者概不承担。
+//   shall be borne solely by the developer; the project organization and contributors assume no responsibility.
+//   GitHub 仓库：https://github.com/GameFrameX
+//   GitHub Repository: https://github.com/GameFrameX
+//   Gitee  仓库：https://gitee.com/GameFrameX
+//   Gitee Repository:  https://gitee.com/GameFrameX
+//   CNB  仓库：https://cnb.cool/GameFrameX
+//   CNB Repository:  https://cnb.cool/GameFrameX
+//   官方文档：https://gameframex.doc.alianblank.com/
+//   Official Documentation: https://gameframex.doc.alianblank.com/
+//  ==========================================================================================
+
+using System;
+using GameFrameX.Runtime;
+using GameFrameX.UI.Runtime;
+using UnityEngine;
+
+namespace GameFrameX.UI.UGUI.Runtime
+{
+    /// <summary>
+    /// UGUI界面基类，提供UGUI特定的界面功能实现。
+    /// </summary>
+    /// <remarks>
+    /// Base class for UGUI forms, providing UGUI-specific UI form functionality.
+    /// </remarks>
+    [UnityEngine.Scripting.Preserve]
+    [DisallowMultipleComponent]
+    public class UGUI : UIForm
+    {
+        /// <summary>
+        /// 界面显示。
+        /// </summary>
+        /// <remarks>
+        /// Shows the UI form with optional animation.
+        /// </remarks>
+        /// <param name="handler">界面显示处理接口 / UI form show handler interface</param>
+        /// <param name="complete">完成回调 / Completion callback</param>
+        [UnityEngine.Scripting.Preserve]
+        public override void Show(IUIFormShowHandler handler, Action complete)
+        {
+            if (handler != null)
+            {
+                handler.Handler(Handle, EnableShowAnimation, ShowAnimationName, complete);
+            }
+            else
+            {
+                complete?.Invoke();
+            }
+        }
+
+
+        /// <summary>
+        /// 界面隐藏。
+        /// </summary>
+        /// <remarks>
+        /// Hides the UI form with optional animation.
+        /// </remarks>
+        /// <param name="handler">界面隐藏处理接口 / UI form hide handler interface</param>
+        /// <param name="complete">完成回调 / Completion callback</param>
+        [UnityEngine.Scripting.Preserve]
+        public override void Hide(IUIFormHideHandler handler, Action complete)
+        {
+            if (handler != null)
+            {
+                handler.Handler(Handle, EnableHideAnimation, HideAnimationName, complete);
+            }
+            else
+            {
+                complete?.Invoke();
+            }
+        }
+
+        /// <summary>
+        /// 设置UI的显示状态，不发出事件。
+        /// </summary>
+        /// <remarks>
+        /// Sets the visibility state of the UI without triggering events.
+        /// </remarks>
+        /// <param name="value">显示状态 / Visibility state</param>
+        [UnityEngine.Scripting.Preserve]
+        protected override void InternalSetVisible(bool value)
+        {
+            if (gameObject.activeSelf == value)
+            {
+                return;
+            }
+
+            gameObject.SetActive(value);
+        }
+
+        /// <summary>
+        /// 获取或设置界面的可见性。
+        /// </summary>
+        /// <remarks>
+        /// Gets or sets the visibility of the UI form.
+        /// </remarks>
+        /// <value>界面的可见性 / Visibility of the UI form</value>
+        [UnityEngine.Scripting.Preserve]
+        public override bool Visible
+        {
+            get
+            {
+                if (gameObject == null)
+                {
+                    return false;
+                }
+
+                return gameObject.activeSelf;
+            }
+            protected set
+            {
+                if (gameObject == null)
+                {
+                    return;
+                }
+
+                if (gameObject.activeSelf == value)
+                {
+                    return;
+                }
+
+                if (value == false)
+                {
+                    // OnHideBeforeAction?.Invoke(this);
+                    // foreach (var child in Children)
+                    // {
+                    //     ((FUI)child.Value).Visible = value;
+                    // }
+
+                    // OnHide();
+                    // OnHideAfterAction?.Invoke(this);
+                }
+
+                gameObject.SetActive(value);
+                if (value)
+                {
+                    // OnShowBeforeAction?.Invoke(this);
+                    // foreach (var child in Children)
+                    // {
+                    //     ((FUI)child.Value).Visible = value;
+                    // }
+                    //
+                    // OnShow();
+                    // OnShowAfterAction?.Invoke(this);
+                    // Refresh();
+                }
+            }
+        }
+
+        /// <summary>
+        /// 设置当前UI对象为全屏。
+        /// </summary>
+        /// <remarks>
+        /// Sets the current UI element to fill the entire parent area.
+        /// </remarks>
+        [UnityEngine.Scripting.Preserve]
+        protected override void MakeFullScreen()
+        {
+            gameObject?.GetOrAddComponent<RectTransform>()?.MakeFullScreen();
+        }
+    }
+}

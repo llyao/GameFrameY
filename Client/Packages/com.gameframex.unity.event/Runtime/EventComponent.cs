@@ -1,0 +1,180 @@
+﻿// ==========================================================================================
+//   GameFrameX 组织及其衍生项目的版权、商标、专利及其他相关权利
+//   GameFrameX organization and its derivative projects' copyrights, trademarks, patents, and related rights
+//   均受中华人民共和国及相关国际法律法规保护。
+//   are protected by the laws of the People's Republic of China and relevant international regulations.
+//   使用本项目须严格遵守相应法律法规及开源许可证之规定。
+//   Usage of this project must strictly comply with applicable laws, regulations, and open-source licenses.
+//   本项目采用 MIT 许可证与 Apache License 2.0 双许可证分发，
+//   This project is dual-licensed under the MIT License and Apache License 2.0,
+//   完整许可证文本请参见源代码根目录下的 LICENSE 文件。
+//   please refer to the LICENSE file in the root directory of the source code for the full license text.
+//   禁止利用本项目实施任何危害国家安全、破坏社会秩序、
+//   It is prohibited to use this project to engage in any activities that endanger national security, disrupt social order,
+//   侵犯他人合法权益等法律法规所禁止的行为！
+//   or infringe upon the legitimate rights and interests of others, as prohibited by laws and regulations!
+//   因基于本项目二次开发所产生的一切法律纠纷与责任，
+//   Any legal disputes and liabilities arising from secondary development based on this project
+//   本项目组织与贡献者概不承担。
+//   shall be borne solely by the developer; the project organization and contributors assume no responsibility.
+//   GitHub 仓库：https://github.com/GameFrameX
+//   GitHub Repository: https://github.com/GameFrameX
+//   Gitee  仓库：https://gitee.com/GameFrameX
+//   Gitee Repository:  https://gitee.com/GameFrameX
+//   CNB  仓库：https://cnb.cool/GameFrameX
+//   CNB Repository:  https://cnb.cool/GameFrameX
+//   官方文档：https://gameframex.doc.alianblank.com/
+//   Official Documentation: https://gameframex.doc.alianblank.com/
+//  ==========================================================================================
+
+using System;
+using GameFrameX.Runtime;
+using UnityEngine;
+
+namespace GameFrameX.Event.Runtime
+{
+    /// <summary>
+    /// 事件组件。
+    /// </summary>
+    [DisallowMultipleComponent]
+    [AddComponentMenu("GameFrameX/Event")]
+    [UnityEngine.Scripting.Preserve]
+    [GameFrameXAutoComponent(-7000)]
+    public sealed class EventComponent : GameFrameworkComponent
+    {
+        private IEventManager m_EventManager = null;
+
+        /// <summary>
+        /// 获取事件处理函数的数量。
+        /// </summary>
+        [UnityEngine.Scripting.Preserve]
+        public int EventHandlerCount
+        {
+            get { return m_EventManager.EventHandlerCount; }
+        }
+
+        /// <summary>
+        /// 获取事件数量。
+        /// </summary>
+        [UnityEngine.Scripting.Preserve]
+        public int EventCount
+        {
+            get { return m_EventManager.EventCount; }
+        }
+
+        /// <summary>
+        /// 游戏框架组件初始化。
+        /// </summary>
+        protected override void Awake()
+        {
+            ImplementationComponentType = Utility.Assembly.GetType(componentType);
+            InterfaceComponentType = typeof(IEventManager);
+            base.Awake();
+            m_EventManager = GameFrameworkEntry.GetModule<IEventManager>();
+            if (m_EventManager == null)
+            {
+                Log.Fatal("Event manager is invalid.");
+                return;
+            }
+        }
+
+        /// <summary>
+        /// 获取事件处理函数的数量。
+        /// </summary>
+        /// <param name="id">事件类型编号。</param>
+        /// <returns>事件处理函数的数量。</returns>
+        [UnityEngine.Scripting.Preserve]
+        public int Count(string id)
+        {
+            return m_EventManager.Count(id);
+        }
+
+        /// <summary>
+        /// 检查是否存在事件处理函数。
+        /// </summary>
+        /// <param name="id">事件类型编号。</param>
+        /// <param name="handler">要检查的事件处理函数。</param>
+        /// <returns>是否存在事件处理函数。</returns>
+        [UnityEngine.Scripting.Preserve]
+        public bool Check(string id, EventHandler<GameEventArgs> handler)
+        {
+            return m_EventManager.Check(id, handler);
+        }
+
+        /// <summary>
+        /// 检查订阅事件处理回调函数。当不存在时自动订阅
+        /// </summary>
+        /// <param name="id">事件类型编号。</param>
+        /// <param name="handler">要订阅的事件处理回调函数。</param>
+        [UnityEngine.Scripting.Preserve]
+        public void CheckSubscribe(string id, EventHandler<GameEventArgs> handler)
+        {
+            m_EventManager.CheckSubscribe(id, handler);
+        }
+
+        /// <summary>
+        /// 取消订阅事件处理回调函数。
+        /// </summary>
+        /// <param name="id">事件类型编号。</param>
+        /// <param name="handler">要取消订阅的事件处理回调函数。</param>
+        [UnityEngine.Scripting.Preserve]
+        public void Unsubscribe(string id, EventHandler<GameEventArgs> handler)
+        {
+            m_EventManager.Unsubscribe(id, handler);
+        }
+
+        /// <summary>
+        /// 检查并取消订阅事件处理回调函数。当 handler 不存在时不执行任何操作。
+        /// </summary>
+        /// <param name="id">事件类型编号。</param>
+        /// <param name="handler">要取消订阅的事件处理回调函数。</param>
+        [UnityEngine.Scripting.Preserve]
+        public void CheckUnsubscribe(string id, EventHandler<GameEventArgs> handler)
+        {
+            m_EventManager.CheckUnsubscribe(id, handler);
+        }
+
+        /// <summary>
+        /// 设置默认事件处理函数。
+        /// </summary>
+        /// <param name="handler">要设置的默认事件处理函数。</param>
+        [UnityEngine.Scripting.Preserve]
+        public void SetDefaultHandler(EventHandler<GameEventArgs> handler)
+        {
+            m_EventManager.SetDefaultHandler(handler);
+        }
+
+        /// <summary>
+        /// 抛出事件，这个操作是线程安全的，即使不在主线程中抛出，也可保证在主线程中回调事件处理函数，但事件会在抛出后的下一帧分发。
+        /// </summary>
+        /// <param name="sender">事件发送者。</param>
+        /// <param name="e">事件内容。</param>
+        [UnityEngine.Scripting.Preserve]
+        public void Fire(object sender, GameEventArgs e)
+        {
+            m_EventManager.Fire(sender, e);
+        }
+
+        /// <summary>
+        /// 抛出事件，这个操作是线程安全的，即使不在主线程中抛出，也可保证在主线程中回调事件处理函数，但事件会在抛出后的下一帧分发。
+        /// </summary>
+        /// <param name="sender">事件发送者。</param>
+        /// <param name="eventId">事件编号。</param>
+        [UnityEngine.Scripting.Preserve]
+        public void Fire(object sender, string eventId)
+        {
+            m_EventManager.Fire(sender, eventId);
+        }
+
+        /// <summary>
+        /// 抛出事件立即模式，这个操作不是线程安全的，事件会立刻分发。
+        /// </summary>
+        /// <param name="sender">事件发送者。</param>
+        /// <param name="e">事件内容。</param>
+        [UnityEngine.Scripting.Preserve]
+        public void FireNow(object sender, GameEventArgs e)
+        {
+            m_EventManager.FireNow(sender, e);
+        }
+    }
+}

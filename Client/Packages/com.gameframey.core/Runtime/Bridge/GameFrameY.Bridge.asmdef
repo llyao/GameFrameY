@@ -8,7 +8,6 @@
         "GameFrameY.Config",
         "Luban.Runtime",
         "GameFrameX.Runtime",
-        "GameFrameX.Entry.Runtime",
         "GameFrameX.Asset.Runtime",
         "GameFrameX.Scene.Runtime",
         "GameFrameX.Event.Runtime",

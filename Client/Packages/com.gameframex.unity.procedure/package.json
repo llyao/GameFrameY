@@ -1,0 +1,38 @@
+{
+    "name": "com.gameframex.unity.procedure",
+    "displayName": "Game Frame X Procedure",
+    "category": "GameFrameX",
+    "description": "GameFrameX Procedure — Unity FSM-based game flow management package. Drives game lifecycle stages (splash, preload, login, main menu, etc.) through swappable procedure states with full lifecycle callbacks (OnInit, OnEnter, OnUpdate, OnFixedUpdate, OnLeave, OnDestroy), runtime procedure destruction and re-initialization, and an entrance procedure configured through code-level ProcedureOptions (GameFrameXOptions.Configure), which also switches between self-driven mode and the StartupRunner takeover. Docs: https://gameframex.doc.alianblank.com\n\nGameFrameX Procedure — Unity 基于 FSM 的游戏流程管理功能包。通过可切换的过程状态驱动游戏生命周期阶段（闪屏、预加载、登录、主菜单等），提供完整生命周期回调（OnInit、OnEnter、OnUpdate、OnFixedUpdate、OnLeave、OnDestroy）与运行时销毁、重建过程状态机；入口过程经代码级 ProcedureOptions（GameFrameXOptions.Configure）配置，并可切换自驱动与 StartupRunner 接管两种启动模式。文档：https://gameframex.doc.alianblank.com",
+    "version": "2.0.0",
+    "unity": "2019.4",
+    "keywords": [
+        "GameFrameX",
+        "Procedure"
+    ],
+    "repository": {
+        "name": "com.gameframex.unity.procedure",
+        "url": "git+https://github.com/gameframex/com.gameframex.unity.procedure.git",
+        "type": "git"
+    },
+    "author": {
+        "name": "Blank",
+        "email": "alianblank@outlook.com",
+        "url": "https://gameframex.doc.alianblank.com"
+    },
+    "dependencies": {
+        "com.gameframex.unity.fsm": "2.0.0",
+        "com.gameframex.unity": "3.0.0"
+    },
+    "devDependencies": {
+        "semantic-release": "^24.2.0",
+        "@semantic-release/changelog": "^6.0.3",
+        "@semantic-release/git": "^10.0.1"
+    },
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://npm.cnb.cool/GameFrameX/npm/-/packages/"
+    },
+    "documentationUrl": "https://gameframex.doc.alianblank.com",
+    "changelogUrl": "https://github.com/gameframex/com.gameframex.unity.procedure/blob/main/CHANGELOG.md",
+    "licensesUrl": "https://github.com/gameframex/com.gameframex.unity.procedure/blob/main/LICENSE.md"
+}

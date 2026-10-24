@@ -1,0 +1,20 @@
+{
+    "name": "GameFrameX.Procedure.Tests",
+    "references": [
+        "GameFrameX.Procedure.Runtime",
+        "GameFrameX.FSM.Runtime",
+        "GameFrameX.Runtime"
+    ],
+    "rootNamespace": "GameFrameX.Procedure.Tests",
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

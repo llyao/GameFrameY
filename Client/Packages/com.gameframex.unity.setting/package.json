@@ -1,0 +1,37 @@
+{
+    "name": "com.gameframex.unity.setting",
+    "displayName": "Game Frame X Setting",
+    "category": "GameFrameX",
+    "description": "GameFrameX Setting — Unity persistent game settings package. Provides typed key-value storage (bool, int, float, string, serializable objects) over pluggable storage backends with a public ISettingStorageBackend contract and registration factory (defaulting to Unity PlayerPrefs). Mini-game storage backends ship as separate channel packages (WeChat / Douyin / Kuaishou / Alipay) installed per platform. Configuration moves to code-level SettingOptions (GameFrameXOptions.Configure, helper factory with custom reference priority); includes load/save lifecycle, existence checks and bulk removal. Docs: https://gameframex.doc.alianblank.com\n\nGameFrameX Setting — Unity 持久化游戏设置功能包。提供类型化键值存储（bool、int、float、string、可序列化对象），存储后端可插拔：public 的 ISettingStorageBackend 契约与注册工厂，默认使用 Unity PlayerPrefs。小游戏存储后端以独立渠道包（微信/抖音/快手/支付宝）按平台加装。配置入口收敛为代码级 SettingOptions（GameFrameXOptions.Configure，Helper 工厂注入、自定义引用优先），提供加载/保存生命周期、存在性检查与批量删除。文档：https://gameframex.doc.alianblank.com",
+    "version": "2.0.0",
+    "unity": "2019.4",
+    "keywords": [
+        "GameFrameX",
+        "Setting"
+    ],
+    "repository": {
+        "name": "com.gameframex.unity.setting",
+        "url": "git+https://github.com/gameframex/com.gameframex.unity.setting.git",
+        "type": "git"
+    },
+    "author": {
+        "name": "Blank",
+        "email": "alianblank@outlook.com",
+        "url": "https://gameframex.doc.alianblank.com"
+    },
+    "dependencies": {
+        "com.gameframex.unity": "3.0.0"
+    },
+    "devDependencies": {
+        "semantic-release": "^24.2.0",
+        "@semantic-release/changelog": "^6.0.3",
+        "@semantic-release/git": "^10.0.1"
+    },
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://npm.cnb.cool/GameFrameX/npm/-/packages/"
+    },
+    "documentationUrl": "https://gameframex.doc.alianblank.com",
+    "changelogUrl": "https://github.com/gameframex/com.gameframex.unity.setting/blob/main/CHANGELOG.md",
+    "licensesUrl": "https://github.com/gameframex/com.gameframex.unity.setting/blob/main/LICENSE.md"
+}

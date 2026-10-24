@@ -1,0 +1,1135 @@
+﻿// ==========================================================================================
+//  GameFrameX 组织及其衍生项目的版权、商标、专利及其他相关权利
+//  GameFrameX organization and its derivative projects' copyrights, trademarks, patents, and related rights
+//  均受中华人民共和国及相关国际法律法规保护。
+//  are protected by the laws of the People's Republic of China and relevant international regulations.
+// 
+//  使用本项目须严格遵守相应法律法规及开源许可证之规定。
+//  Usage of this project must strictly comply with applicable laws, regulations, and open-source licenses.
+// 
+//  本项目采用 Apache License 2.0 许可证分发，
+//  This project is licensed under the Apache License 2.0,
+//  完整许可证文本请参见源代码根目录下的 LICENSE 文件。
+//  please refer to the LICENSE file in the root directory of the source code for the full license text.
+// 
+//  禁止利用本项目实施任何危害国家安全、破坏社会秩序、
+//  It is prohibited to use this project to engage in any activities that endanger national security, disrupt social order,
+//  侵犯他人合法权益等法律法规所禁止的行为！
+//  or infringe upon the legitimate rights and interests of others, as prohibited by laws and regulations!
+//  因基于本项目二次开发所产生的一切法律纠纷与责任，
+//  Any legal disputes and liabilities arising from secondary development based on this project
+//  本项目组织与贡献者概不承担。
+//  shall be borne solely by the developer; the project organization and contributors assume no responsibility.
+// 
+//  GitHub 仓库：https://github.com/GameFrameX
+//  GitHub Repository: https://github.com/GameFrameX
+//  Gitee  仓库：https://gitee.com/GameFrameX
+//  Gitee Repository:  https://gitee.com/GameFrameX
+//  CNB  仓库：https://cnb.cool/GameFrameX
+//  CNB Repository:  https://cnb.cool/GameFrameX
+//  官方文档：https://gameframex.doc.alianblank.com/
+//  Official Documentation: https://gameframex.doc.alianblank.com/
+// ==========================================================================================
+
+using System;
+using System.Text;
+
+namespace GameFrameX.Runtime
+{
+    public static partial class Utility
+    {
+        /// <summary>
+        /// 类型转换相关的实用函数。
+        /// </summary>
+        /// <remarks>
+        /// Type conversion related utility functions.
+        /// </remarks>
+        [UnityEngine.Scripting.Preserve]
+        public static class Converter
+        {
+            private const float InchesToCentimeters = 2.54f; // 1 inch = 2.54 cm
+            private const float CentimetersToInches = 1f / InchesToCentimeters; // 1 cm = 0.3937 inches
+
+            /// <summary>
+            /// 获取数据在此计算机结构中存储时的字节顺序。
+            /// </summary>
+            /// <remarks>
+            /// Gets the byte order of data storage in this computer architecture.
+            /// </remarks>
+            [UnityEngine.Scripting.Preserve]
+            public static bool IsLittleEndian
+            {
+                get { return BitConverter.IsLittleEndian; }
+            }
+
+            /// <summary>
+            /// 获取或设置屏幕每英寸点数。
+            /// </summary>
+            /// <remarks>
+            /// Gets or sets the screen dots per inch.
+            /// </remarks>
+            [UnityEngine.Scripting.Preserve]
+            public static float ScreenDpi { get; set; }
+
+            /// <summary>
+            /// 将像素转换为厘米。
+            /// </summary>
+            /// <remarks>
+            /// Converts pixels to centimeters.
+            /// </remarks>
+            /// <param name="pixels">像素。 / Pixels.</param>
+            /// <returns>厘米。 / Centimeters.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static float GetCentimetersFromPixels(float pixels)
+            {
+                if (ScreenDpi <= 0)
+                {
+                    throw new GameFrameworkException("You must set screen DPI first.");
+                }
+
+                return InchesToCentimeters * pixels / ScreenDpi;
+            }
+
+            /// <summary>
+            /// 将厘米转换为像素。
+            /// </summary>
+            /// <remarks>
+            /// Converts centimeters to pixels.
+            /// </remarks>
+            /// <param name="centimeters">厘米。 / Centimeters.</param>
+            /// <returns>像素。 / Pixels.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static float GetPixelsFromCentimeters(float centimeters)
+            {
+                if (ScreenDpi <= 0)
+                {
+                    throw new GameFrameworkException("You must set screen DPI first.");
+                }
+
+                return CentimetersToInches * centimeters * ScreenDpi;
+            }
+
+            /// <summary>
+            /// 将像素转换为英寸。
+            /// </summary>
+            /// <remarks>
+            /// Converts pixels to inches.
+            /// </remarks>
+            /// <param name="pixels">像素。 / Pixels.</param>
+            /// <returns>英寸。 / Inches.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static float GetInchesFromPixels(float pixels)
+            {
+                if (ScreenDpi <= 0)
+                {
+                    throw new GameFrameworkException("You must set screen DPI first.");
+                }
+
+                return pixels / ScreenDpi;
+            }
+
+            /// <summary>
+            /// 将英寸转换为像素。
+            /// </summary>
+            /// <remarks>
+            /// Converts inches to pixels.
+            /// </remarks>
+            /// <param name="inches">英寸。 / Inches.</param>
+            /// <returns>像素。 / Pixels.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static float GetPixelsFromInches(float inches)
+            {
+                if (ScreenDpi <= 0)
+                {
+                    throw new GameFrameworkException("You must set screen DPI first.");
+                }
+
+                return inches * ScreenDpi;
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的布尔值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified boolean value as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的布尔值。 / The boolean value to convert.</param>
+            /// <returns>用于存放结果的字节数组。 / The byte array containing the result.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static byte[] GetBytes(bool value)
+            {
+                byte[] buffer = new byte[1];
+                GetBytes(value, buffer, 0);
+                return buffer;
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的布尔值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified boolean value as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的布尔值。 / The boolean value to convert.</param>
+            /// <param name="buffer">用于存放结果的字节数组。 / The byte array used to store the result.</param>
+            [UnityEngine.Scripting.Preserve]
+            public static void GetBytes(bool value, byte[] buffer)
+            {
+                GetBytes(value, buffer, 0);
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的布尔值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified boolean value as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的布尔值。 / The boolean value to convert.</param>
+            /// <param name="buffer">用于存放结果的字节数组。 / The byte array used to store the result.</param>
+            /// <param name="startIndex">buffer 内的起始位置。 / The start position within buffer.</param>
+            [UnityEngine.Scripting.Preserve]
+            public static void GetBytes(bool value, byte[] buffer, int startIndex)
+            {
+                if (buffer == null)
+                {
+                    throw new GameFrameworkException("Buffer is invalid.");
+                }
+
+                if (startIndex < 0 || startIndex + 1 > buffer.Length)
+                {
+                    throw new GameFrameworkException("Start index is invalid.");
+                }
+
+                buffer[startIndex] = value ? (byte)1 : (byte)0;
+            }
+
+            /// <summary>
+            /// 返回由字节数组中首字节转换来的布尔值。
+            /// </summary>
+            /// <remarks>
+            /// Returns the boolean converted from the first byte of the byte array.
+            /// </remarks>
+            /// <param name="value">字节数组。 / The byte array.</param>
+            /// <returns>如果 value 中的首字节非零，则为 true，否则为 false。 / true if the first byte in value is non-zero; otherwise, false.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static bool GetBoolean(byte[] value)
+            {
+                return BitConverter.ToBoolean(value, 0);
+            }
+
+            /// <summary>
+            /// 返回由字节数组中指定位置的一个字节转换来的布尔值。
+            /// </summary>
+            /// <remarks>
+            /// Returns the boolean converted from a byte at the specified position of the byte array.
+            /// </remarks>
+            /// <param name="value">字节数组。 / The byte array.</param>
+            /// <param name="startIndex">value 内的起始位置。 / The start position within value.</param>
+            /// <returns>如果 value 中指定位置的字节非零，则为 true，否则为 false。 / true if the byte at the specified position in value is non-zero; otherwise, false.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static bool GetBoolean(byte[] value, int startIndex)
+            {
+                return BitConverter.ToBoolean(value, startIndex);
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的 Unicode 字符值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified Unicode character as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的字符。 / The character to convert.</param>
+            /// <returns>用于存放结果的字节数组。 / The byte array containing the result.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static byte[] GetBytes(char value)
+            {
+                byte[] buffer = new byte[2];
+                GetBytes((short)value, buffer, 0);
+                return buffer;
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的 Unicode 字符值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified Unicode character as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的字符。 / The character to convert.</param>
+            /// <param name="buffer">用于存放结果的字节数组。 / The byte array used to store the result.</param>
+            [UnityEngine.Scripting.Preserve]
+            public static void GetBytes(char value, byte[] buffer)
+            {
+                GetBytes((short)value, buffer, 0);
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的 Unicode 字符值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified Unicode character as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的字符。 / The character to convert.</param>
+            /// <param name="buffer">用于存放结果的字节数组。 / The byte array used to store the result.</param>
+            /// <param name="startIndex">buffer 内的起始位置。 / The start position within buffer.</param>
+            [UnityEngine.Scripting.Preserve]
+            public static void GetBytes(char value, byte[] buffer, int startIndex)
+            {
+                GetBytes((short)value, buffer, startIndex);
+            }
+
+            /// <summary>
+            /// 返回由字节数组中前两个字节转换来的 Unicode 字符。
+            /// </summary>
+            /// <remarks>
+            /// Returns the Unicode character converted from the first two bytes of the byte array.
+            /// </remarks>
+            /// <param name="value">字节数组。 / The byte array.</param>
+            /// <returns>由两个字节构成的字符。 / The character composed of two bytes.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static char GetChar(byte[] value)
+            {
+                return BitConverter.ToChar(value, 0);
+            }
+
+            /// <summary>
+            /// 返回由字节数组中指定位置的两个字节转换来的 Unicode 字符。
+            /// </summary>
+            /// <remarks>
+            /// Returns the Unicode character converted from two bytes at the specified position of the byte array.
+            /// </remarks>
+            /// <param name="value">字节数组。 / The byte array.</param>
+            /// <param name="startIndex">value 内的起始位置。 / The start position within value.</param>
+            /// <returns>由两个字节构成的字符。 / The character composed of two bytes.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static char GetChar(byte[] value, int startIndex)
+            {
+                return BitConverter.ToChar(value, startIndex);
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的 16 位有符号整数值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified 16-bit signed integer as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的数字。 / The number to convert.</param>
+            /// <returns>用于存放结果的字节数组。 / The byte array containing the result.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static byte[] GetBytes(short value)
+            {
+                byte[] buffer = new byte[2];
+                GetBytes(value, buffer, 0);
+                return buffer;
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的 16 位有符号整数值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified 16-bit signed integer as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的数字。 / The number to convert.</param>
+            /// <param name="buffer">用于存放结果的字节数组。 / The byte array used to store the result.</param>
+            [UnityEngine.Scripting.Preserve]
+            public static void GetBytes(short value, byte[] buffer)
+            {
+                GetBytes(value, buffer, 0);
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的 16 位有符号整数值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified 16-bit signed integer as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的数字。 / The number to convert.</param>
+            /// <param name="buffer">用于存放结果的字节数组。 / The byte array used to store the result.</param>
+            /// <param name="startIndex">buffer 内的起始位置。 / The start position within buffer.</param>
+            [UnityEngine.Scripting.Preserve]
+            public static unsafe void GetBytes(short value, byte[] buffer, int startIndex)
+            {
+                if (buffer == null)
+                {
+                    throw new GameFrameworkException("Buffer is invalid.");
+                }
+
+                if (startIndex < 0 || startIndex + 2 > buffer.Length)
+                {
+                    throw new GameFrameworkException("Start index is invalid.");
+                }
+
+                fixed (byte* valueRef = buffer)
+                {
+                    *(short*)(valueRef + startIndex) = value;
+                }
+            }
+
+            /// <summary>
+            /// 返回由字节数组中前两个字节转换来的 16 位有符号整数。
+            /// </summary>
+            /// <remarks>
+            /// Returns the 16-bit signed integer converted from the first two bytes of the byte array.
+            /// </remarks>
+            /// <param name="value">字节数组。 / The byte array.</param>
+            /// <returns>由两个字节构成的 16 位有符号整数。 / The 16-bit signed integer composed of two bytes.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static short GetInt16(byte[] value)
+            {
+                return BitConverter.ToInt16(value, 0);
+            }
+
+            /// <summary>
+            /// 返回由字节数组中指定位置的两个字节转换来的 16 位有符号整数。
+            /// </summary>
+            /// <remarks>
+            /// Returns the 16-bit signed integer converted from two bytes at the specified position of the byte array.
+            /// </remarks>
+            /// <param name="value">字节数组。 / The byte array.</param>
+            /// <param name="startIndex">value 内的起始位置。 / The start position within value.</param>
+            /// <returns>由两个字节构成的 16 位有符号整数。 / The 16-bit signed integer composed of two bytes.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static short GetInt16(byte[] value, int startIndex)
+            {
+                return BitConverter.ToInt16(value, startIndex);
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的 16 位无符号整数值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified 16-bit unsigned integer as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的数字。 / The number to convert.</param>
+            /// <returns>用于存放结果的字节数组。 / The byte array containing the result.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static byte[] GetBytes(ushort value)
+            {
+                byte[] buffer = new byte[2];
+                GetBytes((short)value, buffer, 0);
+                return buffer;
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的 16 位无符号整数值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified 16-bit unsigned integer as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的数字。 / The number to convert.</param>
+            /// <param name="buffer">用于存放结果的字节数组。 / The byte array used to store the result.</param>
+            [UnityEngine.Scripting.Preserve]
+            public static void GetBytes(ushort value, byte[] buffer)
+            {
+                GetBytes((short)value, buffer, 0);
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的 16 位无符号整数值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified 16-bit unsigned integer as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的数字。 / The number to convert.</param>
+            /// <param name="buffer">用于存放结果的字节数组。 / The byte array used to store the result.</param>
+            /// <param name="startIndex">buffer 内的起始位置。 / The start position within buffer.</param>
+            [UnityEngine.Scripting.Preserve]
+            public static void GetBytes(ushort value, byte[] buffer, int startIndex)
+            {
+                GetBytes((short)value, buffer, startIndex);
+            }
+
+            /// <summary>
+            /// 返回由字节数组中前两个字节转换来的 16 位无符号整数。
+            /// </summary>
+            /// <remarks>
+            /// Returns the 16-bit unsigned integer converted from the first two bytes of the byte array.
+            /// </remarks>
+            /// <param name="value">字节数组。 / The byte array.</param>
+            /// <returns>由两个字节构成的 16 位无符号整数。 / The 16-bit unsigned integer composed of two bytes.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static ushort GetUInt16(byte[] value)
+            {
+                return BitConverter.ToUInt16(value, 0);
+            }
+
+            /// <summary>
+            /// 返回由字节数组中指定位置的两个字节转换来的 16 位无符号整数。
+            /// </summary>
+            /// <remarks>
+            /// Returns the 16-bit unsigned integer converted from two bytes at the specified position of the byte array.
+            /// </remarks>
+            /// <param name="value">字节数组。 / The byte array.</param>
+            /// <param name="startIndex">value 内的起始位置。 / The start position within value.</param>
+            /// <returns>由两个字节构成的 16 位无符号整数。 / The 16-bit unsigned integer composed of two bytes.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static ushort GetUInt16(byte[] value, int startIndex)
+            {
+                return BitConverter.ToUInt16(value, startIndex);
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的 32 位有符号整数值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified 32-bit signed integer as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的数字。 / The number to convert.</param>
+            /// <returns>用于存放结果的字节数组。 / The byte array containing the result.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static byte[] GetBytes(int value)
+            {
+                byte[] buffer = new byte[4];
+                GetBytes(value, buffer, 0);
+                return buffer;
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的 32 位有符号整数值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified 32-bit signed integer as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的数字。 / The number to convert.</param>
+            /// <param name="buffer">用于存放结果的字节数组。 / The byte array used to store the result.</param>
+            [UnityEngine.Scripting.Preserve]
+            public static void GetBytes(int value, byte[] buffer)
+            {
+                GetBytes(value, buffer, 0);
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的 32 位有符号整数值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified 32-bit signed integer as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的数字。 / The number to convert.</param>
+            /// <param name="buffer">用于存放结果的字节数组。 / The byte array used to store the result.</param>
+            /// <param name="startIndex">buffer 内的起始位置。 / The start position within buffer.</param>
+            [UnityEngine.Scripting.Preserve]
+            public static unsafe void GetBytes(int value, byte[] buffer, int startIndex)
+            {
+                if (buffer == null)
+                {
+                    throw new GameFrameworkException("Buffer is invalid.");
+                }
+
+                if (startIndex < 0 || startIndex + 4 > buffer.Length)
+                {
+                    throw new GameFrameworkException("Start index is invalid.");
+                }
+
+                fixed (byte* valueRef = buffer)
+                {
+                    *(int*)(valueRef + startIndex) = value;
+                }
+            }
+
+            /// <summary>
+            /// 返回由字节数组中前四个字节转换来的 32 位有符号整数。
+            /// </summary>
+            /// <remarks>
+            /// Returns the 32-bit signed integer converted from the first four bytes of the byte array.
+            /// </remarks>
+            /// <param name="value">字节数组。 / The byte array.</param>
+            /// <returns>由四个字节构成的 32 位有符号整数。 / The 32-bit signed integer composed of four bytes.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static int GetInt32(byte[] value)
+            {
+                return BitConverter.ToInt32(value, 0);
+            }
+
+            /// <summary>
+            /// 返回由字节数组中指定位置的四个字节转换来的 32 位有符号整数。
+            /// </summary>
+            /// <remarks>
+            /// Returns the 32-bit signed integer converted from four bytes at the specified position of the byte array.
+            /// </remarks>
+            /// <param name="value">字节数组。 / The byte array.</param>
+            /// <param name="startIndex">value 内的起始位置。 / The start position within value.</param>
+            /// <returns>由四个字节构成的 32 位有符号整数。 / The 32-bit signed integer composed of four bytes.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static int GetInt32(byte[] value, int startIndex)
+            {
+                return BitConverter.ToInt32(value, startIndex);
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的 32 位无符号整数值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified 32-bit unsigned integer as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的数字。 / The number to convert.</param>
+            /// <returns>用于存放结果的字节数组。 / The byte array containing the result.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static byte[] GetBytes(uint value)
+            {
+                byte[] buffer = new byte[4];
+                GetBytes((int)value, buffer, 0);
+                return buffer;
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的 32 位无符号整数值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified 32-bit unsigned integer as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的数字。 / The number to convert.</param>
+            /// <param name="buffer">用于存放结果的字节数组。 / The byte array used to store the result.</param>
+            [UnityEngine.Scripting.Preserve]
+            public static void GetBytes(uint value, byte[] buffer)
+            {
+                GetBytes((int)value, buffer, 0);
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的 32 位无符号整数值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified 32-bit unsigned integer as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的数字。 / The number to convert.</param>
+            /// <param name="buffer">用于存放结果的字节数组。 / The byte array used to store the result.</param>
+            /// <param name="startIndex">buffer 内的起始位置。 / The start position within buffer.</param>
+            [UnityEngine.Scripting.Preserve]
+            public static void GetBytes(uint value, byte[] buffer, int startIndex)
+            {
+                GetBytes((int)value, buffer, startIndex);
+            }
+
+            /// <summary>
+            /// 返回由字节数组中前四个字节转换来的 32 位无符号整数。
+            /// </summary>
+            /// <remarks>
+            /// Returns the 32-bit unsigned integer converted from the first four bytes of the byte array.
+            /// </remarks>
+            /// <param name="value">字节数组。 / The byte array.</param>
+            /// <returns>由四个字节构成的 32 位无符号整数。 / The 32-bit unsigned integer composed of four bytes.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static uint GetUInt32(byte[] value)
+            {
+                return BitConverter.ToUInt32(value, 0);
+            }
+
+            /// <summary>
+            /// 返回由字节数组中指定位置的四个字节转换来的 32 位无符号整数。
+            /// </summary>
+            /// <remarks>
+            /// Returns the 32-bit unsigned integer converted from four bytes at the specified position of the byte array.
+            /// </remarks>
+            /// <param name="value">字节数组。 / The byte array.</param>
+            /// <param name="startIndex">value 内的起始位置。 / The start position within value.</param>
+            /// <returns>由四个字节构成的 32 位无符号整数。 / The 32-bit unsigned integer composed of four bytes.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static uint GetUInt32(byte[] value, int startIndex)
+            {
+                return BitConverter.ToUInt32(value, startIndex);
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的 64 位有符号整数值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified 64-bit signed integer as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的数字。 / The number to convert.</param>
+            /// <returns>用于存放结果的字节数组。 / The byte array containing the result.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static byte[] GetBytes(long value)
+            {
+                byte[] buffer = new byte[8];
+                GetBytes(value, buffer, 0);
+                return buffer;
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的 64 位有符号整数值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified 64-bit signed integer as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的数字。 / The number to convert.</param>
+            /// <param name="buffer">用于存放结果的字节数组。 / The byte array used to store the result.</param>
+            [UnityEngine.Scripting.Preserve]
+            public static void GetBytes(long value, byte[] buffer)
+            {
+                GetBytes(value, buffer, 0);
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的 64 位有符号整数值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified 64-bit signed integer as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的数字。 / The number to convert.</param>
+            /// <param name="buffer">用于存放结果的字节数组。 / The byte array used to store the result.</param>
+            /// <param name="startIndex">buffer 内的起始位置。 / The start position within buffer.</param>
+            [UnityEngine.Scripting.Preserve]
+            public static unsafe void GetBytes(long value, byte[] buffer, int startIndex)
+            {
+                if (buffer == null)
+                {
+                    throw new GameFrameworkException("Buffer is invalid.");
+                }
+
+                if (startIndex < 0 || startIndex + 8 > buffer.Length)
+                {
+                    throw new GameFrameworkException("Start index is invalid.");
+                }
+
+                fixed (byte* valueRef = buffer)
+                {
+                    *(long*)(valueRef + startIndex) = value;
+                }
+            }
+
+            /// <summary>
+            /// 返回由字节数组中前八个字节转换来的 64 位有符号整数。
+            /// </summary>
+            /// <remarks>
+            /// Returns the 64-bit signed integer converted from the first eight bytes of the byte array.
+            /// </remarks>
+            /// <param name="value">字节数组。 / The byte array.</param>
+            /// <returns>由八个字节构成的 64 位有符号整数。 / The 64-bit signed integer composed of eight bytes.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static long GetInt64(byte[] value)
+            {
+                return BitConverter.ToInt64(value, 0);
+            }
+
+            /// <summary>
+            /// 返回由字节数组中指定位置的八个字节转换来的 64 位有符号整数。
+            /// </summary>
+            /// <remarks>
+            /// Returns the 64-bit signed integer converted from eight bytes at the specified position of the byte array.
+            /// </remarks>
+            /// <param name="value">字节数组。 / The byte array.</param>
+            /// <param name="startIndex">value 内的起始位置。 / The start position within value.</param>
+            /// <returns>由八个字节构成的 64 位有符号整数。 / The 64-bit signed integer composed of eight bytes.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static long GetInt64(byte[] value, int startIndex)
+            {
+                return BitConverter.ToInt64(value, startIndex);
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的 64 位无符号整数值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified 64-bit unsigned integer as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的数字。 / The number to convert.</param>
+            /// <returns>用于存放结果的字节数组。 / The byte array containing the result.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static byte[] GetBytes(ulong value)
+            {
+                byte[] buffer = new byte[8];
+                GetBytes((long)value, buffer, 0);
+                return buffer;
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的 64 位无符号整数值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified 64-bit unsigned integer as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的数字。 / The number to convert.</param>
+            /// <param name="buffer">用于存放结果的字节数组。 / The byte array used to store the result.</param>
+            [UnityEngine.Scripting.Preserve]
+            public static void GetBytes(ulong value, byte[] buffer)
+            {
+                GetBytes((long)value, buffer, 0);
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的 64 位无符号整数值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified 64-bit unsigned integer as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的数字。 / The number to convert.</param>
+            /// <param name="buffer">用于存放结果的字节数组。 / The byte array used to store the result.</param>
+            /// <param name="startIndex">buffer 内的起始位置。 / The start position within buffer.</param>
+            [UnityEngine.Scripting.Preserve]
+            public static void GetBytes(ulong value, byte[] buffer, int startIndex)
+            {
+                GetBytes((long)value, buffer, startIndex);
+            }
+
+            /// <summary>
+            /// 返回由字节数组中前八个字节转换来的 64 位无符号整数。
+            /// </summary>
+            /// <remarks>
+            /// Returns the 64-bit unsigned integer converted from the first eight bytes of the byte array.
+            /// </remarks>
+            /// <param name="value">字节数组。 / The byte array.</param>
+            /// <returns>由八个字节构成的 64 位无符号整数。 / The 64-bit unsigned integer composed of eight bytes.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static ulong GetUInt64(byte[] value)
+            {
+                return BitConverter.ToUInt64(value, 0);
+            }
+
+            /// <summary>
+            /// 返回由字节数组中指定位置的八个字节转换来的 64 位无符号整数。
+            /// </summary>
+            /// <remarks>
+            /// Returns the 64-bit unsigned integer converted from eight bytes at the specified position of the byte array.
+            /// </remarks>
+            /// <param name="value">字节数组。 / The byte array.</param>
+            /// <param name="startIndex">value 内的起始位置。 / The start position within value.</param>
+            /// <returns>由八个字节构成的 64 位无符号整数。 / The 64-bit unsigned integer composed of eight bytes.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static ulong GetUInt64(byte[] value, int startIndex)
+            {
+                return BitConverter.ToUInt64(value, startIndex);
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的单精度浮点值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified single-precision floating-point value as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的数字。 / The number to convert.</param>
+            /// <returns>用于存放结果的字节数组。 / The byte array containing the result.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static unsafe byte[] GetBytes(float value)
+            {
+                byte[] buffer = new byte[4];
+                GetBytes(*(int*)&value, buffer, 0);
+                return buffer;
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的单精度浮点值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified single-precision floating-point value as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的数字。 / The number to convert.</param>
+            /// <param name="buffer">用于存放结果的字节数组。 / The byte array used to store the result.</param>
+            [UnityEngine.Scripting.Preserve]
+            public static unsafe void GetBytes(float value, byte[] buffer)
+            {
+                GetBytes(*(int*)&value, buffer, 0);
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的单精度浮点值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified single-precision floating-point value as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的数字。 / The number to convert.</param>
+            /// <param name="buffer">用于存放结果的字节数组。 / The byte array used to store the result.</param>
+            /// <param name="startIndex">buffer 内的起始位置。 / The start position within buffer.</param>
+            [UnityEngine.Scripting.Preserve]
+            public static unsafe void GetBytes(float value, byte[] buffer, int startIndex)
+            {
+                GetBytes(*(int*)&value, buffer, startIndex);
+            }
+
+            /// <summary>
+            /// 返回由字节数组中前四个字节转换来的单精度浮点数。
+            /// </summary>
+            /// <remarks>
+            /// Returns the single-precision floating-point number converted from the first four bytes of the byte array.
+            /// </remarks>
+            /// <param name="value">字节数组。 / The byte array.</param>
+            /// <returns>由四个字节构成的单精度浮点数。 / The single-precision floating-point number composed of four bytes.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static float GetSingle(byte[] value)
+            {
+                return BitConverter.ToSingle(value, 0);
+            }
+
+            /// <summary>
+            /// 返回由字节数组中指定位置的四个字节转换来的单精度浮点数。
+            /// </summary>
+            /// <remarks>
+            /// Returns the single-precision floating-point number converted from four bytes at the specified position of the byte array.
+            /// </remarks>
+            /// <param name="value">字节数组。 / The byte array.</param>
+            /// <param name="startIndex">value 内的起始位置。 / The start position within value.</param>
+            /// <returns>由四个字节构成的单精度浮点数。 / The single-precision floating-point number composed of four bytes.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static float GetSingle(byte[] value, int startIndex)
+            {
+                return BitConverter.ToSingle(value, startIndex);
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的双精度浮点值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified double-precision floating-point value as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的数字。 / The number to convert.</param>
+            /// <returns>用于存放结果的字节数组。 / The byte array containing the result.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static unsafe byte[] GetBytes(double value)
+            {
+                byte[] buffer = new byte[8];
+                GetBytes(*(long*)&value, buffer, 0);
+                return buffer;
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的双精度浮点值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified double-precision floating-point value as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的数字。 / The number to convert.</param>
+            /// <param name="buffer">用于存放结果的字节数组。 / The byte array used to store the result.</param>
+            [UnityEngine.Scripting.Preserve]
+            public static unsafe void GetBytes(double value, byte[] buffer)
+            {
+                GetBytes(*(long*)&value, buffer, 0);
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定的双精度浮点值。
+            /// </summary>
+            /// <remarks>
+            /// Gets the specified double-precision floating-point value as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的数字。 / The number to convert.</param>
+            /// <param name="buffer">用于存放结果的字节数组。 / The byte array used to store the result.</param>
+            /// <param name="startIndex">buffer 内的起始位置。 / The start position within buffer.</param>
+            [UnityEngine.Scripting.Preserve]
+            public static unsafe void GetBytes(double value, byte[] buffer, int startIndex)
+            {
+                GetBytes(*(long*)&value, buffer, startIndex);
+            }
+
+            /// <summary>
+            /// 返回由字节数组中前八个字节转换来的双精度浮点数。
+            /// </summary>
+            /// <remarks>
+            /// Returns the double-precision floating-point number converted from the first eight bytes of the byte array.
+            /// </remarks>
+            /// <param name="value">字节数组。 / The byte array.</param>
+            /// <returns>由八个字节构成的双精度浮点数。 / The double-precision floating-point number composed of eight bytes.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static double GetDouble(byte[] value)
+            {
+                return BitConverter.ToDouble(value, 0);
+            }
+
+            /// <summary>
+            /// 返回由字节数组中指定位置的八个字节转换来的双精度浮点数。
+            /// </summary>
+            /// <remarks>
+            /// Returns the double-precision floating-point number converted from eight bytes at the specified position of the byte array.
+            /// </remarks>
+            /// <param name="value">字节数组。 / The byte array.</param>
+            /// <param name="startIndex">value 内的起始位置。 / The start position within value.</param>
+            /// <returns>由八个字节构成的双精度浮点数。 / The double-precision floating-point number composed of eight bytes.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static double GetDouble(byte[] value, int startIndex)
+            {
+                return BitConverter.ToDouble(value, startIndex);
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取 UTF-8 编码的字符串。
+            /// </summary>
+            /// <remarks>
+            /// Gets the string encoded in UTF-8 as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的字符串。 / The string to convert.</param>
+            /// <returns>用于存放结果的字节数组。 / The byte array containing the result.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static byte[] GetBytes(string value)
+            {
+                return GetBytes(value, Encoding.UTF8);
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取 UTF-8 编码的字符串。
+            /// </summary>
+            /// <remarks>
+            /// Gets the string encoded in UTF-8 as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的字符串。 / The string to convert.</param>
+            /// <param name="buffer">用于存放结果的字节数组。 / The byte array used to store the result.</param>
+            /// <returns>buffer 内实际填充了多少字节。 / The number of bytes actually filled in buffer.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static int GetBytes(string value, byte[] buffer)
+            {
+                return GetBytes(value, Encoding.UTF8, buffer, 0);
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取 UTF-8 编码的字符串。
+            /// </summary>
+            /// <remarks>
+            /// Gets the string encoded in UTF-8 as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的字符串。 / The string to convert.</param>
+            /// <param name="buffer">用于存放结果的字节数组。 / The byte array used to store the result.</param>
+            /// <param name="startIndex">buffer 内的起始位置。 / The start position within buffer.</param>
+            /// <returns>buffer 内实际填充了多少字节。 / The number of bytes actually filled in buffer.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static int GetBytes(string value, byte[] buffer, int startIndex)
+            {
+                return GetBytes(value, Encoding.UTF8, buffer, startIndex);
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定编码的字符串。
+            /// </summary>
+            /// <remarks>
+            /// Gets the string encoded with the specified encoding as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的字符串。 / The string to convert.</param>
+            /// <param name="encoding">要使用的编码。 / The encoding to use.</param>
+            /// <returns>用于存放结果的字节数组。 / The byte array containing the result.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static byte[] GetBytes(string value, Encoding encoding)
+            {
+                if (value == null)
+                {
+                    throw new GameFrameworkException("Value is invalid.");
+                }
+
+                if (encoding == null)
+                {
+                    throw new GameFrameworkException("Encoding is invalid.");
+                }
+
+                return encoding.GetBytes(value);
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定编码的字符串。
+            /// </summary>
+            /// <remarks>
+            /// Gets the string encoded with the specified encoding as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的字符串。 / The string to convert.</param>
+            /// <param name="encoding">要使用的编码。 / The encoding to use.</param>
+            /// <param name="buffer">用于存放结果的字节数组。 / The byte array used to store the result.</param>
+            /// <returns>buffer 内实际填充了多少字节。 / The number of bytes actually filled in buffer.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static int GetBytes(string value, Encoding encoding, byte[] buffer)
+            {
+                return GetBytes(value, encoding, buffer, 0);
+            }
+
+            /// <summary>
+            /// 以字节数组的形式获取指定编码的字符串。
+            /// </summary>
+            /// <remarks>
+            /// Gets the string encoded with the specified encoding as a byte array.
+            /// </remarks>
+            /// <param name="value">要转换的字符串。 / The string to convert.</param>
+            /// <param name="encoding">要使用的编码。 / The encoding to use.</param>
+            /// <param name="buffer">用于存放结果的字节数组。 / The byte array used to store the result.</param>
+            /// <param name="startIndex">buffer 内的起始位置。 / The start position within buffer.</param>
+            /// <returns>buffer 内实际填充了多少字节。 / The number of bytes actually filled in buffer.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static int GetBytes(string value, Encoding encoding, byte[] buffer, int startIndex)
+            {
+                if (value == null)
+                {
+                    throw new GameFrameworkException("Value is invalid.");
+                }
+
+                if (encoding == null)
+                {
+                    throw new GameFrameworkException("Encoding is invalid.");
+                }
+
+                return encoding.GetBytes(value, 0, value.Length, buffer, startIndex);
+            }
+
+            /// <summary>
+            /// 返回由字节数组使用 UTF-8 编码转换成的字符串。
+            /// </summary>
+            /// <remarks>
+            /// Returns the string converted from the byte array using UTF-8 encoding.
+            /// </remarks>
+            /// <param name="value">字节数组。 / The byte array.</param>
+            /// <returns>转换后的字符串。 / The converted string.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static string GetString(byte[] value)
+            {
+                return GetString(value, Encoding.UTF8);
+            }
+
+            /// <summary>
+            /// 返回由字节数组使用指定编码转换成的字符串。
+            /// </summary>
+            /// <remarks>
+            /// Returns the string converted from the byte array using the specified encoding.
+            /// </remarks>
+            /// <param name="value">字节数组。 / The byte array.</param>
+            /// <param name="encoding">要使用的编码。 / The encoding to use.</param>
+            /// <returns>转换后的字符串。 / The converted string.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static string GetString(byte[] value, Encoding encoding)
+            {
+                if (value == null)
+                {
+                    throw new GameFrameworkException("Value is invalid.");
+                }
+
+                if (encoding == null)
+                {
+                    throw new GameFrameworkException("Encoding is invalid.");
+                }
+
+                return encoding.GetString(value);
+            }
+
+            /// <summary>
+            /// 返回由字节数组使用 UTF-8 编码转换成的字符串。
+            /// </summary>
+            /// <remarks>
+            /// Returns the string converted from the byte array using UTF-8 encoding.
+            /// </remarks>
+            /// <param name="value">字节数组。 / The byte array.</param>
+            /// <param name="startIndex">value 内的起始位置。 / The start position within value.</param>
+            /// <param name="length">长度。 / The length.</param>
+            /// <returns>转换后的字符串。 / The converted string.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static string GetString(byte[] value, int startIndex, int length)
+            {
+                return GetString(value, startIndex, length, Encoding.UTF8);
+            }
+
+            /// <summary>
+            /// 返回由字节数组使用指定编码转换成的字符串。
+            /// </summary>
+            /// <remarks>
+            /// Returns the string converted from the byte array using the specified encoding.
+            /// </remarks>
+            /// <param name="value">字节数组。 / The byte array.</param>
+            /// <param name="startIndex">value 内的起始位置。 / The start position within value.</param>
+            /// <param name="length">长度。 / The length.</param>
+            /// <param name="encoding">要使用的编码。 / The encoding to use.</param>
+            /// <returns>转换后的字符串。 / The converted string.</returns>
+            [UnityEngine.Scripting.Preserve]
+            public static string GetString(byte[] value, int startIndex, int length, Encoding encoding)
+            {
+                if (value == null)
+                {
+                    throw new GameFrameworkException("Value is invalid.");
+                }
+
+                if (encoding == null)
+                {
+                    throw new GameFrameworkException("Encoding is invalid.");
+                }
+
+                return encoding.GetString(value, startIndex, length);
+            }
+        }
+    }
+}

@@ -1,0 +1,35 @@
+{
+    "name": "com.gameframex.unity.fsm",
+    "displayName": "Game Frame X FSM",
+    "category": "GameFrameX",
+    "description": "GameFrameX FSM — Unity generic finite state machine package. Manages creation, lifecycle and transitions of typed state machines (states keyed by FsmState<T> type) with per-FSM string-keyed data dictionaries (Variable values, pool-recycled), runtime state management (AddState / RemoveState / Reset) and FixedUpdate polling, in both generic and named FSM overloads. The component stays a thin forwarding entry; the module is reachable directly via GetModule<T>() / GameApp.Fsm. Docs: https://gameframex.doc.alianblank.com\n\nGameFrameX FSM — Unity 泛型有限状态机功能包。管理类型化状态机（状态以 FsmState<T> 类型为键）的创建、生命周期与状态转换，支持每个 FSM 的字符串键数据字典（Variable 值，池化回收）、运行时状态管理（AddState / RemoveState / Reset）与 FixedUpdate 轮询，提供泛型与命名 FSM 双重载。组件保留为纯转发薄入口，模块可经 GetModule<T>() / GameApp.Fsm 直达。文档：https://gameframex.doc.alianblank.com",
+    "version": "2.0.0",
+    "unity": "2019.4",
+    "keywords": [
+        "GameFrameX",
+        "FSM"
+    ],
+    "repository": {
+        "name": "com.gameframex.unity.fsm",
+        "url": "git+https://github.com/gameframex/com.gameframex.unity.fsm.git",
+        "type": "git"
+    },
+    "author": {
+        "name": "Blank",
+        "email": "alianblank@outlook.com",
+        "url": "https://gameframex.doc.alianblank.com"
+    },
+    "dependencies": {},
+    "devDependencies": {
+        "semantic-release": "^24.2.0",
+        "@semantic-release/changelog": "^6.0.3",
+        "@semantic-release/git": "^10.0.1"
+    },
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://npm.cnb.cool/GameFrameX/npm/-/packages/"
+    },
+    "documentationUrl": "https://gameframex.doc.alianblank.com",
+    "changelogUrl": "https://github.com/gameframex/com.gameframex.unity.fsm/blob/main/CHANGELOG.md",
+    "licensesUrl": "https://github.com/gameframex/com.gameframex.unity.fsm/blob/main/LICENSE.md"
+}

@@ -5,27 +5,27 @@ GameFrameX + YooAsset + Luban + VContainer 的游戏客户端框架单仓，含�
 ```
 GameFrameY/
 ├── Client/          # Unity 2022.3 LTS 工程（自研框架在 Packages/com.gameframey.core）
-│   └── Packages/    #   含 vendored 源码包：YooAsset fork（embedded，优先于 registry）
+│   └── Packages/    #   全部第三方依赖以源码 vendored（embedded package，共 18 个，无第三方 registry）
 ├── Config/          # Luban 配置仓：一份定义，双端生成（客户端 cfg / 服务端 GameFrameY.Config）
-│   └── Tools/       #   LubanSource/ 生成器全量源码(v5.1.0) + Luban/ 构建产物 + build-luban 脚本
+│   └── Tools/       #   LubanSource/ 生成器全量源码(v5.1.0) + Luban/ 构建产物 + build-luban/vendor 脚本
 ├── Server/          # GameFrameX.Server 快照（.NET 10，Apache-2.0，来源见 Server/PROVENANCE.md）
 ├── Protobuf/        # proto3 协议（客户端/服务端共用约定）
-├── docs/            # 架构说明 + 第三方源码来源（third-party.md）
+├── docs/            # 架构说明 + 第三方源码清单（third-party.md）
 └── docker-compose.yml  # MongoDB（服务端依赖）
 ```
 
-技术栈：**GameFrameX**（组件底座，UPM scoped registry）· **YooAsset**（资源，源码内置，经 AssetComponent）· **Luban v5.1**（配置，生成器源码内置）· **VContainer**（DI 脊柱）· **UniTask**（异步）。
+技术栈：**GameFrameX**（组件底座，源码内置）· **YooAsset**（资源，源码内置，经 AssetComponent）· **Luban v5.1**（配置，生成器源码内置）· **VContainer**（DI 脊柱，源码内置）· **UniTask**（异步，源码内置）。
 
-> Luban 与 YooAsset 均以**源码**形式随仓库分发（版本、改动与同步方式见 [docs/third-party.md](docs/third-party.md)）；
-> 改 Luban 生成逻辑后跑 `Config/Tools/build-luban.bat|sh` 重出工具，改 YooAsset 源码 Unity 内直接生效。
+> 所有第三方组件（GameFrameX 包族 + YooAsset + VContainer + UniTask + Luban）都以**源码**随仓库分发，
+> 版本/许可证/同步方式见 [docs/third-party.md](docs/third-party.md)。改 Luban 生成逻辑后跑
+> `Config/Tools/build-luban.bat|sh` 重出工具；改 Unity 侧任意包源码，Unity 内直接生效。
 
 ## 快速开始
 
 ### 1. 打开客户端（Unity 2022.3 LTS）
 
-1. Unity Hub → Open → `Client/`（首次打开需要联网拉取 UPM 包；ProjectVersion 标记 2022.3.54f1，用任意 2022.3.x 打开皆可）。
-2. 两个 scoped registry 已配置在 `Client/Packages/manifest.json`：GameFrameX（`com.gameframex.unity.*`）与 OpenUPM（VContainer）。
-3. 打开 `Assets/Scenes/Boot.unity` → Play。
+1. Unity Hub → Open → `Client/`（全部第三方包已 vendored 为源码，无需第三方 registry；仅 ugui/SBP 等 Unity 官方包走官方源。ProjectVersion 标记 2022.3.54f1，用任意 2022.3.x 打开皆可）。
+2. 打开 `Assets/Scenes/Boot.unity` → Play。
 
 预期日志（冒烟通过标准）：
 
@@ -78,8 +78,8 @@ cd Server/Config && dotnet build     # 我们的服务端配置库（Luban 生�
 
 | 症状 | 处理 |
 |---|---|
-| 包解析失败 | 确认能访问 `gameframex.upm.alianblank.uk` 与 `package.openupm.com`；Package Manager → Refresh |
-| asmdef 引用告警 "YooAsset / YooAsset.Runtime 不存在" | 两个名字按 fork 包实际保留其一即可，另一项告警可忽略（可删 `GameFrameY.Bridge.asmdef` 里多余的那行） |
+| 包解析失败 | manifest 只依赖 Unity 官方源（ugui/内置 modules）；第三方包全部在 `Packages/` 下以源码形式存在，检查目录是否完整 |
+| 某 GFX 包报缺依赖 | 该包 package.json 声明的 `com.gameframex.*` 依赖未 vendored——跑 `Config/Tools/vendor_packages.py` 补齐或按 docs/third-party.md 手动克隆 |
 | Collector 窗口（YooAsset → Bundle Collector）提示 CollectPath/GUID 不匹配 | Luban 重新生成会重建 `Bundles/Config` 目录导致目录 GUID 变化：窗口里 Fix 即可，或把 `AssetBundleCollectorSetting.asset` 里 CollectorGUID 改为该文件夹 .meta 的 guid |
 | EditorSimulate 下加载配置失败 | 确认 AssetBundleCollectorSetting 存在且 Config 组启用；菜单 YooAsset → Bundle Collector 查看 |
 | Play 无 GameFrameY 日志 | Console 过滤 `[GameFrameY]`；确认 Boot 场景为 Build Settings 第 0 个 |

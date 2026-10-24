@@ -1,0 +1,25 @@
+{
+  "name": "GameFrameX.Asset.Runtime",
+  "references": [
+    "GameFrameX.Runtime",
+    "GameFrameX.Event.Runtime",
+    "YooAsset.Runtime",
+    "YooAsset"
+  ],
+  "rootNamespace": "GameFrameX.Asset.Runtime",
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": true,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [
+    {
+      "name": "com.tuyoogame.yooasset.minigame",
+      "expression": "",
+      "define": "ENABLE_GAME_FRAME_X_YOO_ASSET_MINI_GAME"
+    }
+  ],
+  "noEngineReferences": false
+}
