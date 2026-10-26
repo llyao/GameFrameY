@@ -16,6 +16,10 @@
 | 06 | `foundation.html` | UniTask/VContainer 底座 + LitJson/ReadAssets/Localization；**PlayerLoop 时机图**、**作用域链解析模拟** |
 | 07 | `config.html` | Luban 一份定义双端生成全链路；**group 分组过滤演示**、**表数据浏览器（真实数据）** |
 | 08 | `server.html` | GameFrameX.Server：状态-组件-代理三层（可点击）、热更新、部署端口 |
+| 09 | `internals.html` | **源码原理深读**：VContainer 解析内部、UniTask await 机器、YooAsset 引用计数与定位链、EventPool / 宿主扫描内部、Luban 生成管线；**varint 编码器演示**、**await 时序步进**、**Resolve 步进** |
+| 10 | `cookbook.html` | **端到端实战**：从零做一个背包系统（配置→模块→UI→协议→服务端），**消息 ID 计算器**、**步骤进度清单**、跨章错误速查表；04/05 章各含「内部」深读小节 |
+
+各章结构为「0 快速上手（可复制配方）→ API 速查 → 机制与原理 → 内部/边界」，原理最深处集中到 09 章，综合运用在 10 章。
 
 ## 使用
 

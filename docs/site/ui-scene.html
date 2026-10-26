@@ -22,6 +22,54 @@
   </div>
 </header>
 
+<h2 id="quickstart">0 快速上手</h2>
+
+<h3>配方 1：写一个界面（UGUI 后端）</h3>
+<pre class="codeblock"><code data-lang="cs">using GameFrameX.UI.Runtime;
+using GameFrameX.UI.UGUI.Runtime;
+
+[OptionUIGroup("Normal")]                 // 归层（默认 Normal）；免路径版还可加 [OptionUIConfig(Path="UI/LoginUI")]
+public sealed class LoginUI : UGUI        // UGUI 后端界面基类（继承 UIForm）
+{
+    private TMP_InputField _account;
+
+    public override void OnOpen(object userData)
+    {
+        base.OnOpen(userData);
+        _account = GetComponentInChildren&lt;TMP_InputField&gt;();
+    }
+
+    public override void BindEvent()
+    {
+        // 绑定按钮：transform.Find("BtnLogin").GetComponent&lt;Button&gt;().onClick.AddListener(OnClickLogin);
+    }
+
+    public override void LoadData()
+    {
+        // 读配置/拉数据：var cfg = Services.GetService&lt;IConfigService&gt;().Tables; ...
+    }
+
+    private void OnClickLogin() { /* _account.text → 发登录请求 */ }
+}</code></pre>
+<div class="code-caption">prefab 放进 YooAsset 收集目录（如 Assets/Bundles/UI/LoginUI.prefab，地址=文件名 LoginUI）；界面逻辑组件由框架 InstantiateSync 后自动挂上实例</div>
+
+<h3>配方 2：打开 / 关闭 / 防重复</h3>
+<pre class="codeblock"><code data-lang="cs">// 注入 IUIService（依赖声明 "UI"）：
+var login = await _ui.OpenUIAsync&lt;LoginUI&gt;("UI/LoginUI", userData: returnUrl);  // 返回 Task&lt;LoginUI&gt;
+_ui.CloseUI&lt;LoginUI&gt;();
+
+// 默认单例语义：已打开 → Refocus（OnRefocus 提到组顶）；加载中 → 复用同一个加载 Task。
+// 要多个同界面实例：[OptionUIAllowMultiInstance]</code></pre>
+
+<h3>配方 3：切换场景</h3>
+<pre class="codeblock"><code data-lang="cs">// 注入 ISceneService（依赖声明 "Scene"）：
+await _scene.LoadSceneAsync("Assets/Scenes/Main.unity");          // Single：自动卸载全部旧场景
+await _scene.LoadSceneAsync("Assets/Scenes/Battle.unity",
+        LoadSceneMode.Additive);                                   // 叠加
+_scene.SetSceneOrder("Assets/Scenes/Battle.unity", 10);           // active scene = 最大 order
+_scene.UnloadScene("Assets/Scenes/Battle.unity");
+// 注意：Load 返回瞬间 active scene 可能尚未完成激活（内部最多等 60 帧重试）</code></pre>
+
 <h2 id="ui-arch">1 UI 体系分层</h2>
 <pre class="codeblock"><code data-lang="text">UIComponent（门面，Open/Close/Get/UIGroup 管理，[GameFrameXAutoComponent(1400)]）
    │
@@ -143,6 +191,150 @@ public static string GetSceneName(string sceneAssetName);     // 剥目录与 ".
   </ul>
 </div>
 <p>事件（经事件总线转发）：<code>LoadSceneSuccessEventArgs（含 Duration/UserData）/ LoadSceneFailure / LoadSceneUpdate(Progress) / UnloadSceneSuccess/Failure / ActiveSceneChanged</code>。SceneOptions 两个开关：<code>EnableLoadSceneUpdateEvent</code>（默认 true）、<code>EnableLoadSceneDependencyAssetEvent</code>（依赖资源更新事件，默认 true）。</p>
+
+<h2 id="internals">9 内部：加载编排、实例池与组刷新</h2>
+
+<h3>9.1 打开去重的三个层次</h3>
+<p><code>BaseUIManager</code> 用三层手段避免重复开销：<strong>① 已打开</strong> → Refocus（不重加载）；<strong>② 加载中</strong> → 复用同一个 <code>UIFormLoadingObject.Task</code>（并发 Open 同一界面只付一次加载成本，serialId 由 <code>++m_Serial</code> 递增）；<strong>③ 已回收</strong> → 实例池 Spawn 复用（<code>isNewInstance=false</code>，跳过 OnAwake）。实例池用的是 GameFrameX 的对象池体系——<code>UIComponent.Start</code> 里 <code>SetObjectPoolManager(GameFrameworkEntry.GetModule&lt;IObjectPoolManager&gt;())</code>，参数即 UIOptions 四项：<code>InstanceAutoReleaseInterval=60s / InstanceCapacity=16 / InstanceExpireTime=60s / InstancePriority=0</code>（回收间隔/容量/过期时长/优先级）。</p>
+
+<h3>9.2 UIGroup.Refresh：OnPause/OnCover 的真正调用者</h3>
+<pre class="codeblock"><code data-lang="cs">public void Refresh()
+{
+    LinkedListNode&lt;UIFormInfo&gt; current = m_UIFormInfos.First;
+    bool pause = m_Pause;      // 组级暂停
+    bool cover = false;
+    int depth = UIFormCount;   // 组内深度：栈式自上而下
+
+    while (current != null)
+    {
+        var info = current.Value;
+        info.UIForm.OnDepthChanged(Depth, depth--);     // 每次刷新都重算组内深度
+        if (pause || cover)
+        {
+            // 覆盖链：栈顶之下全部 Covered（+暂停条件满足时 Paused）
+            // → 依次触发 OnCover / OnPause（是否暂停取决于该界面的 PauseCoveredUIForm）
+        }
+        else { /* → OnReveal / OnResume */ }
+        cover = true;   // 第一个界面之后都算"被覆盖"
+        current = current.Next;
+    }
+}</code></pre>
+<div class="code-caption">即 OnPause/OnResume/OnCover/OnReveal 由 UIGroup.Refresh 在 Open/Close/组 Pause 变化时统一重算触发；"界面被谁盖住"不需要手动管理</div>
+
+<h3>9.3 场景 Single 模式的真实卸载链</h3>
+<pre class="codeblock"><code data-lang="cs">if (sceneMode == LoadSceneMode.Single)
+{
+    // ① 先占位：防止 unload 事件订阅者在卸载回调里重入 LoadScene(同名) 绕过 SceneIsLoading 检查
+    m_LoadingSceneAssetNames[sceneAssetName] = new SceneHandleData(null, userData);
+
+    // ② Unity 会自动销毁其他场景的 GameObject，但 YooAsset 的资源引用必须框架主动释放；
+    //    字典残留还会让后续重载报 "already loaded" —— 故统一清理
+    UnloadAllLoadedScenesInternal();
+}
+// ③ 激活重试：await 完成可能早于 Unity scene.isLoaded
+while ((!scene.IsValid() || !scene.isLoaded) &amp;&amp; retry &lt; 60) yield return null;   // RefreshSceneOrderWhenLoadedCo</code></pre>
+
+<h3>9.4 UIFormLoadingObject：共享的是任务，不是实例</h3>
+<p>打开流程中的 <code>UIFormLoadingObject</code> 是一个 <code>ReferencePool</code> 对象，字段只有资源路径、资源名、类型和 <code>Task&lt;IUIForm&gt;</code>。单例模式下，第二个并发打开请求命中同一组字段后直接 <code>await loadingUIForm.Task</code>；加载结束时从 <code>m_LoadingUIForms</code> 移除并归还引用池。</p>
+<pre class="codeblock"><code data-lang="cs">public static UIFormLoadingObject Create(
+    string assetPath, string assetName, Type formType, Task&lt;IUIForm&gt; task)
+{
+    var value = ReferencePool.Acquire&lt;UIFormLoadingObject&gt;();
+    value.UIFormAssetPath = assetPath;
+    value.UIFormAssetName = assetName;
+    value.UIFormType = formType;
+    value.Task = task;
+    return value;
+}
+
+// InnerOpenUIFormAsync：单例模式的并发去重
+foreach (var loading in m_LoadingUIForms)
+{
+    if (loading.UIFormAssetPath == uiFormAssetPath
+        &amp;&amp; loading.UIFormAssetName == uiFormAssetName
+        &amp;&amp; loading.UIFormType == uiFormType)
+        return await loading.Task;
+}
+
+try
+{
+    return await uiFormTask;
+}
+finally
+{
+    if (m_LoadingUIForms.Remove(loadingObject))
+        ReferencePool.Release(loadingObject);
+}</code></pre>
+<div class="code-caption">因此“加载中去重”只共享一次资源加载和一次最终 UI 实例创建；它不是一个可重复 Spawn 的实例句柄。失败、取消或完成都必须经过 finally 清掉 loading 记录，否则同名界面会永久被判定为加载中。</div>
+
+<h3>9.5 打开与回收：单实例池化，多实例现建</h3>
+<pre class="codeblock"><code data-lang="cs">if (UseSingletonOpenMode(uiFormType))
+{
+    var opened = GetUIForm(uiFormAssetName);
+    if (opened != null)
+    {
+        RefocusUIForm(opened, userData);
+        return opened;
+    }
+
+    var pooled = m_InstancePool.Spawn(assetPath);
+    if (pooled != null)
+        return InternalOpenUIForm(++m_Serial, uiFormAssetPath,
+            uiFormAssetName, uiFormType, pooled.Target,
+            pauseCoveredUIForm, false, 0f, userData, isFullScreen);
+}
+
+// 加载成功：创建实例对象并登记到 MultiSpawn 池
+var instance = UIFormInstanceObject.Create(...);
+m_InstancePool.Register(instance, true);
+return InternalOpenUIForm(..., instance.Target, ..., true, ...);
+
+// UIManager.RecycleUIForm
+uiForm.OnRecycle();
+m_InstancePool.Unspawn(uiForm.Handle);
+if (isDispose)
+    m_InstancePool.ReleaseObject(uiForm.Handle);</code></pre>
+<p>源码特意把实例池复用限制在<strong>单实例打开模式</strong>：这个池是 MultiSpawn 池，多实例界面如果复用仍在使用的同一个 GameObject，会让多个逻辑组件共用同一对象。关闭时先 <code>Unspawn</code>，只有明确销毁时才 <code>ReleaseObject</code>；所以“关闭”不等于“销毁资源”。</p>
+<div class="callout info"><div class="callout-title">生命周期观察点</div><p>新加载实例进入 <code>InternalOpenUIForm</code> 时 <code>isNewInstance=true</code>，池中取回的实例传入 <code>false</code>。成功打开的调用顺序是 <code>Init → AddUIForm → OnOpen → BindEvent → LoadData → UpdateLocalization → Show → UIGroup.Refresh</code>；排查界面重复初始化时，应先看它走的是“新建”还是“池复用”分支。</p></div>
+
+<h3>9.6 场景的三张状态表：Loading、Loaded、Unloading</h3>
+<pre class="codeblock"><code data-lang="cs">// LoadScene：先拒绝冲突，再写入 Loading 表
+if (SceneIsUnloading(sceneAssetName))
+    throw new GameFrameworkException("scene is being unloaded");
+if (SceneIsLoading(sceneAssetName))
+    throw new GameFrameworkException("scene is being loaded");
+
+if (sceneMode == LoadSceneMode.Single)
+{
+    m_LoadingSceneAssetNames[sceneAssetName] =
+        new SceneHandleData(null, userData); // 先占位，防止卸载回调重入
+    UnloadAllLoadedScenesInternal();
+}
+else if (SceneIsLoaded(sceneAssetName))
+{
+    throw new GameFrameworkException("scene is already loaded");
+}
+
+try
+{
+    var handle = await m_assetManager.LoadSceneAsync(sceneAssetName, sceneMode, true);
+    m_LoadingSceneAssetNames[sceneAssetName] =
+        new SceneHandleData(handle, userData);
+    handle.Completed += OnLoadSceneCompleted;
+    return handle;
+}
+catch
+{
+    m_LoadingSceneAssetNames.Remove(sceneAssetName);
+    throw;
+}
+
+// OnLoadSceneCompleted：只有成功才进入 Loaded 表
+if (loadSucceed)
+    m_LoadedSceneAssetNames.Add(assetPath, sceneOperationHandle);
+m_LoadingSceneAssetNames.Remove(assetPath);</code></pre>
+<p><code>UnloadAllLoadedScenesInternal</code> 会先复制并清空 Loaded 表，再逐项处理：Additive 场景调用 <code>handle.UnloadAsync()</code> 并登记到 Unloading 表；被 YooAsset 标记为 main scene 的 Single 场景不能主动 <code>UnloadAsync</code>，由 Unity 加载新 Single 场景时销毁对象，框架只补发成功事件来同步 UI/Scene 状态。</p>
+<div class="code-caption">场景句柄的状态变化不是一个布尔值：Loading 防重入，Loaded 才允许正常 Unload，Unloading 防止同名并发操作。Load 失败必须删除 Loading 占位，否则下一次重试会被错误地拦截。</div>
 
 <footer class="pagenav"></footer>
 </main>

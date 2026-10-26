@@ -3,30 +3,35 @@ using System.Collections.Generic;
 using System.Linq;
 using Cysharp.Threading.Tasks;
 using GameFrameY.Core.Service;
+using GameFrameY.Core.Startup;
 using VContainer;
 using VContainer.Unity;
 
 namespace GameFrameY.Core.Module
 {
     /// <summary>
-    /// 模块管理器：装配 = 按依赖拓扑序为每个模块创建 VContainer 子作用域（链式父子：
-    /// 后装模块的作用域以先装模块为父，因此模块只能构造注入"自己声明的依赖 + 根作用域"提供的服务，
-    /// 未声明的跨模块引用在装配期即失败）。生命周期（Initialize/Start/Tick/Shutdown）由本管理器统一驱动；
-    /// Tick 泵本身以 VContainer EntryPoint 挂在 PlayerLoop 上。
+    /// 模块管理器：装配 = 按依赖拓扑序为每个模块创建 VContainer 子作用域（当前实现为线性父链，
+    /// 依赖声明用于排序和依赖存在性校验；需要跨模块定位的服务必须显式导出到中央注册表）。
+    /// 生命周期（Initialize/Start/Tick/Shutdown）由本管理器统一驱动；Tick 泵本身以 VContainer EntryPoint 挂在 PlayerLoop 上。
     /// </summary>
     public sealed class GameModuleManager : ITickable, IFixedTickable, ILateTickable
     {
         private readonly LifetimeScope _rootScope;
         private readonly IServiceRegistry _serviceRegistry;
+        private readonly GameFrameYStartupStatus _startupStatus;
         private readonly List<GameModuleDescriptor> _installed = new();
         private readonly Dictionary<string, GameModuleDescriptor> _installedByName = new(StringComparer.OrdinalIgnoreCase);
         private LifetimeScope _lastCreatedScope;
         private bool _bootstrapInstalled;
 
-        public GameModuleManager(LifetimeScope rootScope, IServiceRegistry serviceRegistry)
+        public GameModuleManager(
+            LifetimeScope rootScope,
+            IServiceRegistry serviceRegistry,
+            GameFrameYStartupStatus startupStatus)
         {
             _rootScope = rootScope ?? throw new ArgumentNullException(nameof(rootScope));
             _serviceRegistry = serviceRegistry ?? throw new ArgumentNullException(nameof(serviceRegistry));
+            _startupStatus = startupStatus ?? throw new ArgumentNullException(nameof(startupStatus));
         }
 
         /// <summary>已装配模块（装配顺序）。</summary>
@@ -47,11 +52,11 @@ namespace GameFrameY.Core.Module
                 return;
             }
 
-            _bootstrapInstalled = true;
             var descriptors = ResolveDescriptors(assemblies)
                 .Where(d => d.Startup == ModuleStartup.Bootstrap)
                 .ToList();
             await InstallCoreAsync(descriptors);
+            _bootstrapInstalled = true;
         }
 
         /// <summary>
@@ -69,12 +74,14 @@ namespace GameFrameY.Core.Module
         /// <summary>按装配逆序卸载全部模块并注销其登记的服务。</summary>
         public async UniTask ShutdownAsync()
         {
+            _startupStatus.TryTransition(GameFrameYStartupState.Stopping);
             for (var i = _installed.Count - 1; i >= 0; i--)
             {
                 var descriptor = _installed[i];
                 try
                 {
-                    if (descriptor.State is GameModuleState.Initialized or GameModuleState.Started)
+                    if (descriptor.ModuleInstance != null &&
+                        (descriptor.State is GameModuleState.Installing or GameModuleState.Initialized or GameModuleState.Started))
                     {
                         await descriptor.ModuleInstance.OnShutdownAsync();
                     }
@@ -84,15 +91,34 @@ namespace GameFrameY.Core.Module
                     GfyLog.Error($"模块 {descriptor.Name} OnShutdownAsync 异常: {e}");
                 }
 
-                _serviceRegistry.UnregisterAll(descriptor.Name);
-                descriptor.Scope?.Dispose();
+                try
+                {
+                    _serviceRegistry.UnregisterAll(descriptor.Name);
+                }
+                catch (Exception e)
+                {
+                    GfyLog.Error($"模块 {descriptor.Name} 注销服务异常: {e}");
+                }
+
+                try
+                {
+                    descriptor.Scope?.Dispose();
+                }
+                catch (Exception e)
+                {
+                    GfyLog.Error($"模块 {descriptor.Name} 释放作用域异常: {e}");
+                }
+
                 descriptor.State = GameModuleState.Shutdown;
+                descriptor.Scope = null;
+                descriptor.ModuleInstance = null;
             }
 
             _installed.Clear();
             _installedByName.Clear();
             _lastCreatedScope = null;
             _bootstrapInstalled = false;
+            _startupStatus.TryTransition(GameFrameYStartupState.Stopped);
         }
 
         void ITickable.Tick() => PumpModules<ITickableModule>(static (m, dt, rdt) => m.OnTick(dt, rdt), UnityEngine.Time.deltaTime, UnityEngine.Time.unscaledDeltaTime);
@@ -126,42 +152,116 @@ namespace GameFrameY.Core.Module
         private IReadOnlyList<GameModuleDescriptor> ResolveDescriptors(Assembly[] assemblies)
         {
             var types = ModuleScanner.ScanModules(assemblies);
-            return ModuleDependencyResolver.Resolve(types);
+            var descriptors = ModuleDependencyResolver.Resolve(types, _installedByName.Keys);
+            foreach (var descriptor in descriptors)
+            {
+                if (_installedByName.TryGetValue(descriptor.Name, out var installed) &&
+                    installed.ModuleType != descriptor.ModuleType)
+                {
+                    throw new GameModuleException(
+                        $"模块名重复: {descriptor.Name} 已安装类型 {installed.ModuleType.FullName}，" +
+                        $"新扫描类型为 {descriptor.ModuleType.FullName}");
+                }
+            }
+
+            return descriptors;
         }
 
         private async UniTask InstallCoreAsync(IReadOnlyList<GameModuleDescriptor> descriptors)
         {
-            foreach (var descriptor in descriptors)
+            var batch = new List<GameModuleDescriptor>();
+            var previousLastScope = _lastCreatedScope;
+            var batchLastScope = previousLastScope;
+
+            try
             {
-                if (_installedByName.ContainsKey(descriptor.Name))
+                foreach (var descriptor in descriptors)
                 {
-                    continue;
+                    if (_installedByName.ContainsKey(descriptor.Name))
+                    {
+                        continue;
+                    }
+
+                    var installer = CreateInstaller(descriptor);
+                    var parent = batchLastScope ?? _rootScope;
+                    var scope = parent.CreateChild(installer, $"GameFrameY.Module.{descriptor.Name}");
+                    descriptor.Scope = scope;
+                    descriptor.State = GameModuleState.Installing;
+                    batch.Add(descriptor);
+
+                    var module = (IGameModule)scope.Container.Resolve(descriptor.ModuleType);
+                    module.Descriptor = descriptor;
+                    descriptor.ModuleInstance = module;
+                    batchLastScope = scope;
+
+                    await module.OnInitializeAsync();
+                    descriptor.State = GameModuleState.Initialized;
+                    _installed.Add(descriptor);
+                    _installedByName[descriptor.Name] = descriptor;
                 }
 
-                var installer = CreateInstaller(descriptor);
-                var parent = _lastCreatedScope ?? _rootScope;
-                var scope = parent.CreateChild(installer, $"GameFrameY.Module.{descriptor.Name}");
-                descriptor.Scope = scope;
-                descriptor.State = GameModuleState.Installing;
+                foreach (var descriptor in batch)
+                {
+                    await descriptor.ModuleInstance.OnStartAsync();
+                    descriptor.State = GameModuleState.Started;
+                    GfyLog.Info($"模块就绪: {descriptor.Name} ({descriptor.ModuleType.Name})");
+                }
 
-                var module = (IGameModule)scope.Container.Resolve(descriptor.ModuleType);
-                module.Descriptor = descriptor;
-                descriptor.ModuleInstance = module;
-
-                _installed.Add(descriptor);
-                _installedByName[descriptor.Name] = descriptor;
-                _lastCreatedScope = scope;
-
-                await module.OnInitializeAsync();
-                descriptor.State = GameModuleState.Initialized;
+                _lastCreatedScope = batchLastScope;
             }
-
-            // Start 阶段：同一批内按装配顺序串行启动。
-            foreach (var descriptor in _installed.Where(d => d.State == GameModuleState.Initialized).ToList())
+            catch
             {
-                await descriptor.ModuleInstance.OnStartAsync();
-                descriptor.State = GameModuleState.Started;
-                GfyLog.Info($"模块就绪: {descriptor.Name} ({descriptor.ModuleType.Name})");
+                await RollbackBatchAsync(batch);
+                foreach (var descriptor in batch)
+                {
+                    _installed.Remove(descriptor);
+                    _installedByName.Remove(descriptor.Name);
+                }
+
+                _lastCreatedScope = previousLastScope;
+                throw;
+            }
+        }
+
+        private async UniTask RollbackBatchAsync(IReadOnlyList<GameModuleDescriptor> batch)
+        {
+            for (var i = batch.Count - 1; i >= 0; i--)
+            {
+                var descriptor = batch[i];
+                try
+                {
+                    if (descriptor.ModuleInstance != null &&
+                        (descriptor.State is GameModuleState.Installing or GameModuleState.Initialized or GameModuleState.Started))
+                    {
+                        await descriptor.ModuleInstance.OnShutdownAsync();
+                    }
+                }
+                catch (Exception e)
+                {
+                    GfyLog.Error($"模块 {descriptor.Name} 回滚时 OnShutdownAsync 异常: {e}");
+                }
+
+                try
+                {
+                    _serviceRegistry.UnregisterAll(descriptor.Name);
+                }
+                catch (Exception e)
+                {
+                    GfyLog.Error($"模块 {descriptor.Name} 回滚时注销服务异常: {e}");
+                }
+
+                try
+                {
+                    descriptor.Scope?.Dispose();
+                }
+                catch (Exception e)
+                {
+                    GfyLog.Error($"模块 {descriptor.Name} 回滚时释放作用域异常: {e}");
+                }
+
+                descriptor.State = GameModuleState.Shutdown;
+                descriptor.Scope = null;
+                descriptor.ModuleInstance = null;
             }
         }
 

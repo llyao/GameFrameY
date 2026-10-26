@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-#if UNITY_2021_3_OR_NEWER
+#if VCONTAINER_UNITY_COLLECTIONS_INTEGRATION
 using System.Runtime.InteropServices;
 using Unity.Collections.LowLevel.Unsafe;
 #endif
@@ -132,7 +132,7 @@ namespace VContainer.Internal
             }
         }
 
-#if UNITY_2021_3_OR_NEWER
+#if VCONTAINER_UNITY_COLLECTIONS_INTEGRATION
         static unsafe int FindNullIndex(T[] target)
         {
             ref var head = ref UnsafeUtility.As<T, IntPtr>(ref MemoryMarshal.GetReference(target.AsSpan()));

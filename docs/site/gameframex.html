@@ -22,6 +22,69 @@
   </div>
 </header>
 
+<h2 id="quickstart">0 快速上手</h2>
+
+<h3>配方 1：自定义一个事件（含参数）</h3>
+<pre class="codeblock"><code data-lang="cs">// ① 定义事件参数：继承 GameEventArgs，Id 约定用类型 FullName（参考包内 OnApplicationFocusChangedEventArgs）
+public sealed class PlayerLevelUpEventArgs : GameEventArgs
+{
+    public static readonly string EventId = typeof(PlayerLevelUpEventArgs).FullName;
+    public override string Id =&gt; EventId;
+
+    public int NewLevel { get; private set; }
+    public static PlayerLevelUpEventArgs Create(int newLevel)
+    {
+        var e = ReferencePool.Acquire&lt;PlayerLevelUpEventArgs&gt;();   // 走引用池，避免每次分配
+        e.NewLevel = newLevel;
+        return e;
+    }
+    public override void Clear() =&gt; NewLevel = 0;                  // 回收前清状态（引用池约定）
+}
+
+// ② 订阅（幂等）/ ③ 发布（线程安全，下一帧分发）
+var ev = GameEntry.GetComponent&lt;EventComponent&gt;();
+ev.CheckSubscribe(PlayerLevelUpEventArgs.EventId, (sender, e) =&gt;
+{
+    var args = (PlayerLevelUpEventArgs)e;
+    Debug.Log($"升到 {args.NewLevel} 级");
+});
+ev.Fire(this, PlayerLevelUpEventArgs.Create(10));</code></pre>
+<div class="code-caption">无参数信号直接用字符串 ID：ev.CheckSubscribe("MyGame.Ready", h) / ev.Fire(this, "MyGame.Ready")</div>
+
+<h3>配方 2：给一个实体建状态机</h3>
+<pre class="codeblock"><code data-lang="cs">var fsmComponent = GameEntry.GetComponent&lt;FsmComponent&gt;();
+IFsm&lt;Player&gt; fsm = fsmComponent.CreateFsm("battle", player,
+    new PlayerIdleState(), new PlayerMoveState(), new PlayerAttackState());
+fsm.Start&lt;PlayerIdleState&gt;();                       // 只能 Start 一次；重跑先 Reset()
+
+// 状态内跳转（FsmState&lt;Player&gt; 的 OnUpdate 里）：
+protected override void OnUpdate(IFsm&lt;Player&gt; fsm, float dt, float _)
+{
+    if (Input.GetKeyDown(KeyCode.J)) ChangeState&lt;PlayerAttackState&gt;(fsm);
+}
+
+// 黑板：跨状态传数据（值经 Variable 包装）
+fsm.SetData("Combo", VarInt32.Create(3));
+int combo = fsm.GetData&lt;VarInt32&gt;("Combo").Value;</code></pre>
+
+<h3>配方 3：读写持久化设置</h3>
+<pre class="codeblock"><code data-lang="cs">var setting = GameEntry.GetComponent&lt;SettingComponent&gt;();
+setting.SetFloat("Audio.Volume", 0.8f);
+setting.SetBool("FirstLaunch", false);
+setting.SetObject("PlayerPref", new PlayerPref { Quality = 2 });   // 对象经 JSON 序列化
+setting.Save();    // ★ SetXxx 只写内存，显式 Save 才落盘（框架关闭时也会自动 Save）
+
+float volume = setting.GetFloat("Audio.Volume", defaultValue: 1f); // 每种类型都有带默认值重载</code></pre>
+
+<h3>配方 4：非 Mono 对象挂每帧 / 全局开关</h3>
+<pre class="codeblock"><code data-lang="cs">// 纯 C# 服务想接每帧（替代自建 MonoBehaviour）：
+GameEntry.GetComponent&lt;MonoComponent&gt;().AddUpdateListener((dt, unscaledDt) =&gt; { /* 每帧 */ });
+// 进后台/回前台：AddOnApplicationPauseListener(paused =&gt; { }) 或订阅事件总线同名事件
+
+// 全局设置（BaseComponent）：
+var b = GameEntry.GetComponent&lt;BaseComponent&gt;();
+b.FrameRate = 60;  b.RunInBackground = true;  b.PauseGame();  b.GameSpeed = 2f;</code></pre>
+
 <h2 id="host">1 宿主自举：[GameFrameX] 是怎么来的</h2>
 <p>理解所有 GameFrameX 包的前提：<strong>每个包提供一个 <code>GameFrameworkComponent</code> 子类，全部挂在自动创建的常驻宿主 <code>[GameFrameX]</code> GameObject 上</strong>。自举分三个阶段（<code>GameFrameXRuntimeBootstrap.cs</code>）：</p>
 <ol>
@@ -269,7 +332,8 @@ mono.AddOnApplicationFocusListener(focused =&gt; { });
       function () {
         phaseLog("AfterSceneLoad", "EnsureStarted()：创建 [GameFrameX] GameObject（SetActive(false)，Play 下 DontDestroyOnLoad）");
         hostGo = el("div", { style: "border:1px solid var(--accent);border-radius:8px;padding:6px 10px;margin-bottom:6px;background:var(--accent-soft)" }, [
-          el("div", { style: "font-family:var(--mono);font-weight:700;font-size:13px;color:var(--accent)", text: "[GameFrameX] (DontDestroyOnLoad)" })
+          el("div", { style: "font-family:var(--mono);font-weight:700;font-size:13px;color:var(--accent)", text: "[GameFrameX] (DontDestroyOnLoad · SetActive(false))" }),
+          el("div", { style: "font-size:10.5px;color:var(--text-faint);margin-top:2px", text: "真实结构：宿主下每个组件一个子 GameObject（先 SetActive(false) 再按 Order 挂载，保证 Awake 顺序确定）" })
         ]);
         compList = el("div", { style: "padding-left:18px;display:flex;flex-direction:column;gap:3px" });
         hostGo.appendChild(compList);
@@ -279,7 +343,7 @@ mono.AddOnApplicationFocusListener(focused =&gt; { });
     COMPS.forEach(function (c) {
       steps.push(function () {
         compList.appendChild(el("div", { style: "font-family:var(--mono);font-size:12px;color:var(--text)" }, [
-          el("span", { class: "badge b-blue", text: String(c[1]) }), " " + c[0] + " — Awake：注册 GameEntry + 注册 Manager 模块"
+          el("span", { class: "badge b-blue", text: String(c[1]) }), " ├ " + c[0].replace("Component", "") + "/ → AddComponent(" + c[0] + ") · Awake：注册 GameEntry + Manager 模块"
         ]));
         var item = queue.querySelector('[data-name="' + c[0] + '"]');
         if (item) { item.style.opacity = "1"; item.style.borderColor = "var(--ok)"; item.style.color = "var(--text)"; }

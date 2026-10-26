@@ -8,7 +8,8 @@ using VContainer;
 namespace GameFrameY.Core.Service
 {
     /// <summary>
-    /// 默认实现：中央登记表（按类型聚合，后登记优先）+ 根容器 TryResolve 兜底。
+    /// 默认实现：中央登记表（按类型聚合，后登记优先）+ 根作用域 TryResolve 兜底。
+    /// 模块子作用域的 Installer 服务不会被根 resolver 向下查找，需通过模块显式导出进入中央表。
     /// 仅设计为主线程使用（与 VContainer 解析、Unity 生命周期一致）。
     /// </summary>
     public sealed class ServiceRegistry : IServiceRegistry
@@ -69,7 +70,7 @@ namespace GameFrameY.Core.Service
                 return true;
             }
 
-            // 容器兜底：模块 Installer 注册的类型服务。
+            // 容器兜底：根作用域直接注册的类型服务；模块子作用域服务需显式导出到中央表。
             if (_rootResolver.TryResolve<TService>(out service))
             {
                 return true;
@@ -148,7 +149,7 @@ namespace GameFrameY.Core.Service
                 return 0;
             }
 
-            var removed = 0;
+            var removedDescriptors = new List<ServiceDescriptor>();
             foreach (var key in _registered.Keys.ToList())
             {
                 var list = _registered[key];
@@ -159,10 +160,8 @@ namespace GameFrameY.Core.Service
                         continue;
                     }
 
-                    var descriptor = list[i];
+                    removedDescriptors.Add(list[i]);
                     list.RemoveAt(i);
-                    removed++;
-                    ServiceChanged?.Invoke(new ServiceChangeEventArgs(ServiceChangeKind.Removed, descriptor));
                 }
 
                 if (list.Count == 0)
@@ -171,7 +170,12 @@ namespace GameFrameY.Core.Service
                 }
             }
 
-            return removed;
+            foreach (var descriptor in removedDescriptors)
+            {
+                ServiceChanged?.Invoke(new ServiceChangeEventArgs(ServiceChangeKind.Removed, descriptor));
+            }
+
+            return removedDescriptors.Count;
         }
 
         public async UniTask<TService> WaitServiceAsync<TService>(CancellationToken cancellationToken = default) where TService : class

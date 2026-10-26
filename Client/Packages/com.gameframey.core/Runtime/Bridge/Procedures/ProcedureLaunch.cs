@@ -1,14 +1,19 @@
 using GameFrameY.Core;
 using GameFrameY.Core.Module;
 using GameFrameY.Core.Service;
+using GameFrameY.Core.Startup;
 
 namespace GameFrameY.Bridge.Procedures
 {
     /// <summary>启动横幅与前置检查，随后进入补丁流程。</summary>
     public sealed class ProcedureLaunch : GameFrameYProcedure
     {
-        public ProcedureLaunch(GameModuleManager modules, IServiceRegistry services, GameFrameYLaunchSettings settings)
-            : base(modules, services, settings)
+        public ProcedureLaunch(
+            GameModuleManager modules,
+            IServiceRegistry services,
+            GameFrameYLaunchSettings settings,
+            GameFrameYStartupStatus startupStatus)
+            : base(modules, services, settings, startupStatus)
         {
         }
 

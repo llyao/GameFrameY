@@ -1,5 +1,6 @@
 using GameFrameY.Core.Module;
 using GameFrameY.Core.Service;
+using GameFrameY.Core.Startup;
 using VContainer;
 using VContainer.Unity;
 
@@ -12,7 +13,8 @@ namespace GameFrameY.Bridge
         {
             builder.Register<IServiceRegistry>(resolver => new ServiceRegistry(resolver), Lifetime.Singleton);
             builder.RegisterInstance(new GameFrameYLaunchSettings());
-            builder.RegisterEntryPoint<GameModuleManager>(Lifetime.Singleton);
+            builder.RegisterInstance(new GameFrameYStartupStatus());
+            builder.RegisterEntryPoint<GameModuleManager>(Lifetime.Singleton).AsSelf();
             builder.RegisterEntryPoint<GameFrameYGameLauncher>(Lifetime.Singleton);
         }
     }

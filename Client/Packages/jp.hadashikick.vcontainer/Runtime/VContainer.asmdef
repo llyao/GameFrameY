@@ -2,9 +2,7 @@
     "name": "VContainer",
     "rootNamespace": "VContainer",
     "references": [
-        "Unity.Collections",
-        "Unity.Entities",
-        "UniTask"
+        "UniTask.Runtime"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
@@ -15,12 +13,7 @@
     "defineConstraints": [],
     "versionDefines": [
         {
-            "name": "com.unity.entities",
-            "expression": "",
-            "define": "VCONTAINER_ECS_INTEGRATION"
-        },
-        {
-            "name": "com.cysharp.unitask",
+            "name": "com.gameframex.unity.cysharp.unitask",
             "expression": "",
             "define": "VCONTAINER_UNITASK_INTEGRATION"
         }

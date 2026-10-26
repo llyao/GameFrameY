@@ -14,7 +14,9 @@ var SERIES = [
   { file: "network.html",  num: "05", short: "网络",     accent: "#8b5cf6", title: "Network · 网络与协议" },
   { file: "foundation.html", num: "06", short: "异步/DI", accent: "#14b8a6", title: "UniTask & VContainer · 异步与 DI 底座" },
   { file: "config.html",   num: "07", short: "配置",     accent: "#f97316", title: "Luban · 配置管线" },
-  { file: "server.html",   num: "08", short: "服务端",   accent: "#64748b", title: "GameFrameX.Server · 服务端概览" }
+  { file: "server.html",   num: "08", short: "服务端",   accent: "#64748b", title: "GameFrameX.Server · 服务端概览" },
+  { file: "internals.html", num: "09", short: "原理深读", accent: "#ef4444", title: "源码原理深读 · 从使用到原理" },
+  { file: "cookbook.html", num: "10", short: "实战", accent: "#22c55e", title: "端到端实战 · 从零做一个背包系统" }
 ];
 
 /* ---------------- 小工具 ---------------- */

@@ -19,30 +19,29 @@ flowchart LR
     B --> C[LifetimeScope.Create<br/>GameFrameYRootInstaller]
     C --> D[AfterSceneLoad: GameFrameX<br/>隐藏宿主自动挂载组件]
     D --> E[IAsyncStartable<br/>GameFrameYGameLauncher]
-    E --> F[等组件就绪] --> G[InitializeBootstrapModulesAsync<br/>扫描/拓扑排序/链式建子作用域]
+    E --> F[等组件就绪] --> G[InitializeBootstrapModulesAsync<br/>扫描/拓扑排序/线性子作用域装配]
     G --> H[Procedure 链<br/>Launch→Patch→LoadConfig→EnterGame]
     H --> I[InstallDeferredModulesAsync<br/>业务模块（未来含热更程序集）]
 ```
 
 ### 关键机制
 
-1. **自动发现**：`[GameModule]` 特性标记 `IGameModule` 实现类，`ModuleScanner` 扫描 AppDomain（排除系统程序集）；热更程序集加载后可 `InstallDeferredModulesAsync(assemblies)` 二次装配。
+1. **自动发现**：`[GameModule]` 特性标记 `IGameModule` 实现类，`ModuleScanner` 扫描 AppDomain（排除系统程序集）；热更程序集加载后可 `InstallDeferredModulesAsync(assemblies)` 二次装配，已安装模块名称会作为跨批次依赖上下文。
 2. **依赖排序**：`ModuleDependencyResolver` DFS 拓扑排序 + 缺失依赖/循环依赖报错；同层按 `Priority`、名字稳定排序。
-3. **链式作用域（架构约束即保护）**：第 N 个模块的 VContainer 子作用域以第 N-1 个为父。由于 VContainer 子作用域只能向上解析，
-   模块只能构造注入「自己声明的依赖 + 根作用域」提供的服务 —— 未声明的跨模块引用在装配期即失败。
+3. **链式作用域（当前 v0.1 实现）**：第 N 个模块的 VContainer 子作用域以第 N-1 个已装配模块为父，依赖声明用于拓扑排序和依赖存在性校验；当前父链允许后装模块看到前序模块的容器注册，尚不等同于严格的依赖访问隔离。需要跨模块定位的服务必须通过 `GameModuleBase.RegisterService<T>()` 显式导出到中央注册表。
 4. **生命周期**：模块实例由其子作用域创建（支持构造注入 + `[Inject]` 属性注入）；`OnInitializeAsync/OnStartAsync/OnShutdownAsync`
    由 `GameModuleManager` 按序驱动；`ITickableModule/IFixedTickableModule/ILateTickableModule` 由管理器泵驱动，
    管理器本身是 VContainer EntryPoint（挂在 PlayerLoop 上，无额外 MonoBehaviour）。
 5. **启动阶段**：`ModuleStartup.Bootstrap`（框架自举时装，如 Asset/Event/Config 桥接）与 `ModuleStartup.Deferred`
-   （EnterGame 流程装，如业务模块）。
+   （EnterGame 流程装，如业务模块）。GameFrameY 启动状态由 `Created → Bootstrapping → Patching → LoadingConfig → EnteringGame → Ready` 记录；任一异步流程失败进入 `Failed`，模块 Shutdown 进入 `Stopping → Stopped`。
 
 ## 服务发现（GameFrameY.Core.Service）
 
-`IServiceRegistry` 两级查找 + 动态事件：
+`IServiceRegistry` 中央登记表 + 根作用域兜底，并提供动态事件：
 
 - **中央注册表**：模块运行期 `RegisterService(new Xxx())` 登记的实例（含归属模块）；`ServiceChanged` 事件与
   `WaitServiceAsync<T>()` 提供"未就绪先等待"的发现语义；模块卸载自动注销其登记。
-- **根容器兜底**：模块 Installer 注册的类型服务（如 `IAssetService`）经 VContainer `TryResolve` 可查。
+- **根容器兜底**：只覆盖根作用域直接注册的类型服务。模块 Installer 创建的子作用域服务不会被根 resolver 反向发现，必须由模块在初始化阶段显式导出到中央注册表。
 - 消费方式优先级：**构造注入**（依赖关系显式、可测试）＞ 服务定位（热更代码/场景对象/调试）。
 
 ## GameFrameX 桥接（GameFrameY.Bridge）
@@ -95,6 +94,6 @@ public sealed class ShopModuleInstaller : IInstaller
 ## 已知边界（v0.1）
 
 - HostPlayMode 的静态版本/清单/断点续传下载流未实现（`IAssetService.InitializeAsync` 仅初始化包）；HostPlayMode 本机联调用任意静态 HTTP 服务挂 CDN 目录。
-- HybridCLR 热更未启用：`InstallDeferredModulesAsync(params Assembly[])` 已预留装配热更程序集内模块的入口。
+- HybridCLR 热更未启用：`InstallDeferredModulesAsync(params Assembly[])` 已预留装配热更程序集内模块的入口；显式传入程序集时，依赖可以引用已安装模块，重复模块名仍会拒绝。
 - 模块作用域链中卸载单个中间模块会破坏链（v0.1 只支持整体 ShutdownAsync 逆序卸载）。
 - VContainer SourceGenerator 未启用（反射注入模式），后续按官方文档放入 DLL 可提速。

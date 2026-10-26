@@ -22,6 +22,66 @@
   </div>
 </header>
 
+<h2 id="quickstart">0 快速上手</h2>
+
+<h3>配方 1：建通道并连接</h3>
+<pre class="codeblock"><code data-lang="cs">// 注入 INetworkService（Network 模块装配后即可构造注入/服务定位）
+public sealed class NetDemoModule : GameModuleBase
+{
+    private INetworkChannel _channel;
+
+    public override UniTask OnStartAsync()
+    {
+        var net = Services.GetService&lt;INetworkService&gt;();
+        // helper 决定整条编解码管线；默认实现会反射注册全部默认分包处理器
+        _channel = net.CreateChannel("main", new DefaultNetworkChannelHelper());
+
+        // TCP 通道用 Uri 的 Host/Port 建端点（地址可来自配置表 TbServerList：host=127.0.0.1 port=29100）
+        _channel.Connect(new Uri("tcp://127.0.0.1:29100"));
+        return UniTask.CompletedTask;
+    }
+}</code></pre>
+
+<h3>配方 2：接收服务器推送（正确写法：方法级特性）</h3>
+<div class="callout danger">
+  <div class="callout-title">注意：MessageHandler 是「方法级」特性，不是类基类</div>
+  <p>处理器类实现 <code>IMessageHandler</code>（唯一成员 <code>Register()</code>），在<strong>方法</strong>上标 <code>[MessageHandler(typeof(NoticeNotify), nameof(OnNotice))]</code>。可被特性分发的消息必须是 <code>MessageObject</code> 且实现 <code>INotifyMessage</code>（推送）；请求/响应对（Req/Resp）由 RPC 状态机匹配，不走特性。注册入口是公开静态方法 <code>ProtoMessageHandler.Add(handler)</code>（何时调用由你决定，比如模块 OnStartAsync；移除用 Remove）。</p>
+</div>
+<pre class="codeblock"><code data-lang="cs">public sealed class DemoNetHandler : IMessageHandler
+{
+    public void Register()
+    {
+        ProtoMessageHandler.Add(this);   // 反射扫描本类所有 [MessageHandler] 方法并登记
+    }
+
+    [MessageHandler(typeof(NoticeNotify), nameof(OnNotice))]  // 消息类型 + 方法名（nameof 防拼错）
+    private void OnNotice(NoticeNotify message)               // 恰好 1 个参数，参数类型必须等于消息类型
+    {
+        // 通道在主线程 Update 中消费队列后反射调用到这里（内部缓存 object[] 避免每次分配）
+        GfyLog.Info($"[Net] 收到公告：{message.Content}");
+    }
+}</code></pre>
+<div class="code-caption">ProtoMessageHandler 维护 ConcurrentDictionary&lt;Type, List&lt;MessageHandlerAttribute&gt;&gt;；重复注册同一方法会 Log.Error</div>
+
+<h3>配方 3：请求-响应（RPC）与即发即弃</h3>
+<pre class="codeblock"><code data-lang="cs">// RPC：Call&lt;TResult&gt; 内部用序列号匹配响应，超时走 NetworkOptions.RpcTimeout（默认 5000ms）
+LoginResp resp = await _channel.Call&lt;LoginResp&gt;(new LoginReq { Account = "alice", Token = "..." });
+
+// 推送型（无需等待）：Send 即发即弃
+_channel.Send(new HeartbeatReq { ClientTime = DateTimeOffset.Now.ToUnixTimeMilliseconds() });</code></pre>
+
+<h3>配方 4：心跳与断线感知</h3>
+<pre class="codeblock"><code data-lang="cs">_channel.HeartBeatInterval = 30f;              // 秒；到点由 helper.SendHeartBeat() 发 IHeartBeatMessage
+_channel.ResetHeartBeatElapseSecondsWhenReceivePacket = true;  // 收到任意包即重置计时（默认建议保持）
+
+// 断线感知走事件总线（NetworkComponent 把通道事件 Fire 成全局事件）：
+GameEntry.GetComponent&lt;EventComponent&gt;()
+    .CheckSubscribe(NetworkClosedEventArgs.EventId, (sender, e) =>
+    {
+        var args = (NetworkClosedEventArgs)e;   // args.NetworkChannelName / Reason / ErrorCode
+        // 框架不自动重连——在这里做重连/弹窗
+    });</code></pre>
+
 <h2 id="arch">1 通道制架构</h2>
 <pre class="codeblock"><code data-lang="text">NetworkComponent（[GameFrameXAutoComponent(1000)]，门面：创建/查找/销毁通道）
    │  CreateNetworkChannel(name, helper)
@@ -144,13 +204,7 @@ void SetRPCErrorHandler(EventHandler&lt;MessageObject&gt; handler);            /
 </div>
 
 <h2 id="rpc">5 异步 RPC：Call&lt;TResult&gt;</h2>
-<p><code>Send</code> 是即发即弃；<code>Call&lt;TResult&gt;(req)</code> 走 <code>PRpcState</code>：请求带序列号，收到匹配的 <code>IResponseMessage</code> 时 <code>TryReply</code> 完成 Task；超时（<code>NetworkOptions.RpcTimeout</code>，默认 5000ms）走 <code>SetRPCErrorHandler</code> 回调。RPC 的开始/结束/错误码三类 handler 都可挂。</p>
-<pre class="codeblock"><code data-lang="cs">// 消息分发的推荐写法：特性驱动，主线程执行
-[MessageHandler(typeof(LoginResp))]
-public sealed class LoginRespHandler : MessageHandler&lt;LoginResp&gt;
-{
-    public override void Handle(INetworkChannel channel, LoginResp message) { /* 更新 UI/状态 */ }
-}</code></pre>
+<p><code>Send</code> 是即发即弃；<code>Call&lt;TResult&gt;(req)</code> 走 <code>PRpcState</code>：请求带序列号，收到匹配的 <code>IResponseMessage</code> 时 <code>TryReply</code> 完成 Task；超时（<code>NetworkOptions.RpcTimeout</code>，默认 5000ms）走 <code>SetRPCErrorHandler</code> 回调。RPC 的开始/结束/错误码三类 handler 都可挂。推送消息的分发写法见 <a href="#quickstart">快速上手 · 配方 2</a>（方法级 <code>[MessageHandler]</code> 特性，主线程执行）。</p>
 
 <h2 id="websocket">6 WebSocket 库（psygames.unitywebsocket）</h2>
 <div class="table-wrap"><table>
@@ -203,6 +257,179 @@ message NoticeNotify { string content = 1; }             // 服务器推送</cod
     <tr><td><code>IgnoredSendNetworkIds / IgnoredReceiveNetworkIds</code></td><td>空</td><td>收发日志忽略的消息 ID（压日志噪音）</td></tr>
   </tbody>
 </table></div>
+
+<h2 id="internals">9 内部：线程模型、RPC 匹配与分包字节格式</h2>
+<p>更深一层的源码事实（为排障与定制编解码时用）：</p>
+
+<h3>9.1 线程模型：两级队列，主线程收敛</h3>
+<pre class="codeblock"><code data-lang="cs">// 发送侧：Send&lt;T&gt; 只入链表（任意线程可调），真正序列化在主线程 Update 里
+public void Send&lt;T&gt;(T messageObject) where T : MessageObject
+{
+    lock (PSendPacketPool) { PSendPacketPool.AddLast(messageObject); }   // ① 发送队列（链表+锁）
+}
+protected virtual bool ProcessSend()          // ② 主线程每帧（NetworkComponent.Update 驱动）
+{
+    lock (PSendPacketPool)
+    {
+        while (PSendPacketPool.First != null) { /* 逐条 ProcessSendMessage 序列化进同一个 MemoryStream */ }
+        PSendState.Stream.Position = 0L;      // ③ 一批消息合入一个缓冲，一次性下发 socket
+        return true;
+    }
+}
+
+// 接收侧：socket 回调线程收字节 → 反序列化 → 跨线程队列 → 主线程消费
+protected readonly ConcurrentQueue&lt;MessageObject&gt; m_ExecutionMessageQueue = new();
+// 主线程 Update：while (m_ExecutionMessageQueue.TryDequeue(out var msg)) → 先 PRpcState.TryReply，
+// 未命中再走 [MessageHandler] 分发（NetworkChannelBase.ProcessReceivedMessage）</code></pre>
+<div class="code-caption">即：业务代码可以放心在任意线程 Send；所有回调（RPC 完成/handler）都保证主线程执行。基类的 ProcessReceive() 是空的——字节接收在各 Socket 实现（SystemNetSocket / WebSocketNetSocket）的回调里</div>
+
+<h3>9.2 分包字节格式（DefaultPacketSendHeaderHandler）</h3>
+<pre class="codeblock"><code data-lang="text">一帧 = 包头(14B) + 包体
+包头：uint PacketLength(4B) + byte OperationType(1B) + byte ZipFlag(1B)
+      + int UniqueId(4B, RPC 匹配键) + int CmdId(4B, 消息 ID = (moduleId&lt;&lt;16)+seqId)
+包体：IMessageSerializer 序列化字节（≥ LimitCompressLength=512 时可经 IMessageCompressHandler 压缩，ZipFlag 置位）
+接包：DefaultPacketReceiveHeaderHandler 按同格式读头 → DefaultPacketReceiveBodyHandler 反序列化出 MessageObject</code></pre>
+<p>序列化器是<strong>可插拔注册</strong>的：通道级 <code>SetChannelSerializer</code> 或 <code>MessageSerializerRegistry.RegisterGlobal()</code>；<code>DefaultMessageSerializer</code> 本身只是"未注册即报错"的哨兵（protobuf 等具体实现在接入 GameFrameX.Tools 生成代码后提供）。</p>
+
+<h3>9.3 RPC 匹配（RpcState）</h3>
+<pre class="codeblock"><code data-lang="cs">// Call&lt;TResult&gt; 登记等待项（键 = 消息 UniqueId）
+var data = RpcMessageData.Create(messageObject as IRequestMessage, _rpcTimeout, isIgnoreErrorCode);
+_waitingReplyHandlingObjects.TryAdd(messageObject.UniqueId, data);   // ConcurrentDictionary
+
+// 收到响应：TryReply 用 UniqueId 匹配
+public bool TryReply(MessageObject message)
+{
+    if (message.GetType().IsImplWithInterface(typeof(IResponseMessage))
+        && _waitingReplyHandlingObjects.TryRemove(message.UniqueId, out var waiting))
+    {
+        waiting.Reply(message as IResponseMessage);          // 完成 Task
+        if (message.ErrorCode != 0 && !waiting.IsIgnoreErrorCode)
+            _rpcErrorCodeHandler?.Invoke(this, message);     // 业务错误码回调
+        return true;
+    }
+    return false;   // 未命中 → 走 [MessageHandler] 推送分发
+}
+// 超时：每帧 IncrementalElapseTime 累计，到期收集移除；注意 RpcState 构造强制 timeout ≥ 3000ms</code></pre>
+<div class="code-caption">所以 RPC 的"键"是每条请求的 UniqueId 而不是消息 ID——同一种请求可以并发多次；响应匹配不到等待项时才会落到推送分发</div>
+
+<h3>9.4 TCP 接收状态机：半包不是异常</h3>
+<p><code>SystemTcpNetworkChannel</code> 不把一次 Socket 回调当成一条完整消息。<code>PReceiveState.Stream</code> 会跨多个 <code>BeginReceive</code> 保留当前包的字节：先补齐 14 字节头，再按 <code>PacketLength - PacketHeaderLength</code> 读取包体；头或体没收完整时继续异步接收，只有完整包才进入反序列化。</p>
+<pre class="codeblock"><code data-lang="cs">private void ReceiveCallback(IAsyncResult asyncResult)
+{
+    int bytesReceived = PSystemNetSocket.EndReceive(asyncResult);
+    PReceiveState.Stream.Position += bytesReceived;
+
+    if (PReceiveState.Stream.Position &lt; PReceiveState.Stream.Length)
+    {
+        ReceiveAsync();                    // 当前包还没收完：保留 Stream，继续补数据
+        return;
+    }
+
+    PReceiveState.Stream.Position = 0L;
+    bool success = PReceiveState.PacketHeader != null
+        ? ProcessPackBody()                 // 头已解析，本轮只处理体
+        : ProcessPackHeader();              // 先读 14B，计算下一段体长度
+
+    if (success)
+        ReceiveAsync();                     // 一个包完成后，马上准备下一个包
+    else
+        Close("Packet process error.", (ushort)NetworkErrorCode.DeserializePacketError);
+}
+
+private bool ProcessPackBody()
+{
+    int bodyLength = (int)(PReceiveState.PacketHeader.PacketLength
+        - PReceiveState.PacketHeader.PacketHeaderLength);
+    var body = new byte[bodyLength];
+    _ = PReceiveState.Stream.Read(body, 0, bodyLength);
+    if (PReceiveState.PacketHeader.ZipFlag != 0)
+        body = MessageDecompressHandler.Handler(body);
+
+    bool success = PNetworkChannelHelper.DeserializePacketBody(
+        body, PacketReceiveHeaderHandler.Id, out var messageObject);
+    if (success)
+    {
+        messageObject.SetUpdateUniqueId(PacketReceiveHeaderHandler.UniqueId);
+        m_ExecutionMessageQueue.Enqueue(messageObject);
+        PReceiveState.PrepareForPacketHeader();
+    }
+    return success;
+}</code></pre>
+<div class="code-caption">TCP 的连续字节流可能把一个包拆成多次回调，也可能一次带来多个包；状态机用 Stream.Position、PacketHeader 和 PrepareForPacketHeader 把边界重新拼出来。解析失败会关闭通道，而不是把半包交给业务层。</div>
+
+<h3>9.5 连接成功：从 Socket 建连到可用通道</h3>
+<pre class="codeblock"><code data-lang="cs">private void ConnectAsync(object userData)
+{
+    PIsConnecting = true;
+    m_ConnectState = new ConnectState(PSystemNetSocket, userData);
+    PSystemNetSocket.BeginConnect(
+        ConnectEndPoint.Address, ConnectEndPoint.Port,
+        ConnectCallback, m_ConnectState);
+}
+
+private void ConnectCallback(IAsyncResult asyncResult)
+{
+    PIsConnecting = false;
+    var state = (ConnectState)asyncResult.AsyncState;
+    try
+    {
+        ((SystemNetSocket)state.Socket).EndConnect(asyncResult);
+    }
+    catch (ObjectDisposedException) { return; }
+    catch (Exception e)
+    {
+        NetworkChannelError?.Invoke(this, NetworkErrorCode.ConnectError,
+            SocketError.Success, e.ToString());
+        Close(NetworkCloseReason.ConnectClose, (ushort)SocketError.Success);
+        return;
+    }
+
+    m_SentPacketCount = 0;
+    m_ReceivedPacketCount = 0;
+    lock (PSendPacketPool) PSendPacketPool.Clear();
+    lock (PHeartBeatState) PHeartBeatState.Reset(true);
+    PActive = true;
+    NetworkChannelConnected?.Invoke(this, state.UserData);
+    ReceiveAsync();
+}</code></pre>
+<p>这里的 <code>Connected</code> 事件不是 <code>BeginConnect</code> 一调用就触发，而是在 <code>EndConnect</code> 成功、收发计数清零、发送队列清空、心跳状态重置之后才触发。连接异常分成两类：已释放的 Socket 直接结束回调；其他异常先发 <code>ConnectError</code>，再关闭通道。</p>
+<div class="callout warn"><div class="callout-title">WebSocket 适配器的边界</div><p>在 <code>ENABLE_GAME_FRAME_X_WEB_SOCKET</code> 下，<code>WebSocketNetSocket</code> 只把 <code>e.IsBinary</code> 的 <code>RawData</code> 转给接收回调，文本帧会被忽略；<code>OnError</code> 把连接任务置为 <code>false</code>。当前适配器中 30 秒超时与“连接结果为 false 时抛异常”的代码仍是注释，调用方不能把它当成内置超时保障，应在上层补连接超时与失败策略。</p></div>
+
+<h3>9.6 RPC 等待项：超时先完成任务，再清理索引</h3>
+<pre class="codeblock"><code data-lang="cs">internal bool IncrementalElapseTime(long time)
+{
+    ElapseTime += time;
+    if (ElapseTime &lt; Timeout)
+        return false;
+
+    m_Tcs.TrySetException(new TimeoutException(
+        $"Rpc call timeout! Message FullName:{RequestMessage.GetType().FullName}"));
+    return true;
+}
+
+public void Update(float elapseSeconds, float realElapseSeconds)
+{
+    long elapsed = (long)(realElapseSeconds * 1000);
+    foreach (var item in _waitingReplyHandlingObjects)
+    {
+        if (!item.Value.IncrementalElapseTime(elapsed))
+            continue;
+
+        _timeoutIds.Add(item.Key);
+        _rpcErrorHandler?.Invoke(this, item.Value.RequestMessage as MessageObject);
+    }
+
+    foreach (var id in _timeoutIds)
+        _waitingReplyHandlingObjects.TryRemove(id, out _);
+}
+
+public void Dispose() // Reset() 使用同一套清理语义
+{
+    foreach (var item in _waitingReplyHandlingObjects)
+        item.Value.Dispose();                 // TrySetCanceled()
+    _waitingReplyHandlingObjects.Clear();
+}</code></pre>
+<div class="code-caption"><code>RpcState</code> 构造时小于 3000ms 会直接抛 <code>ArgumentOutOfRangeException</code>；正常超时会先让 <code>TaskCompletionSource</code> 进入异常态并调用错误回调，下一步才从 <code>ConcurrentDictionary</code> 移除。断线重连可调用 <code>Reset()</code>，它会把全部未完成 RPC 取消，而不是静默遗留。</div>
 
 <footer class="pagenav"></footer>
 </main>

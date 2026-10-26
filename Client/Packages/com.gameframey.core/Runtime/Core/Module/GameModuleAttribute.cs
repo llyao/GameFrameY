@@ -27,7 +27,7 @@ namespace GameFrameY.Core.Module
         /// <summary>同层无依赖关系时的装配顺序参考，小者先装。</summary>
         public int Priority { get; set; }
 
-        /// <summary>依赖的其他模块名。声明的依赖会成为构造注入可见的祖先作用域。</summary>
+        /// <summary>依赖的其他模块名，用于拓扑排序和装配期依赖存在性校验。</summary>
         public string[] Dependencies { get; set; } = Array.Empty<string>();
 
         /// <summary>模块的 VContainer 注册器（实现 VContainer.IInstaller）。可为空（纯代码模块）。</summary>

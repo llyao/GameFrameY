@@ -22,6 +22,66 @@
   </div>
 </header>
 
+<h2 id="quickstart">0 快速上手</h2>
+
+<h3>配方 1：UniTask 实战四式</h3>
+<pre class="codeblock"><code data-lang="cs">// ① 物体销毁即取消（UI/场景对象里的标准写法）
+private void Start() { RefreshLoop().Forget(); }
+
+async UniTaskVoid RefreshLoop()
+{
+    var ct = this.GetCancellationTokenOnDestroy();   // destroyCancellationToken 的安全包装
+    while (!ct.IsCancellationRequested)
+    {
+        await UniTask.Delay(1000, cancellationToken: ct);
+        Refresh();
+    }
+}   // Forget() 消费异常（进 UniTaskScheduler.UnobservedTaskException）
+
+// ② 并行 + 超时
+var (a, b) = await UniTask.WhenAll(LoadA(), LoadB());
+var result = await FetchAsync().Timeout(TimeSpan.FromSeconds(5));
+
+// ③ 等条件成立（自研层等组件就绪同款）
+await UniTask.WaitUntil(() =&gt; _ready);
+
+// ④ 取消但不抛异常
+var (isCanceled, value) = await LoadAsync().SuppressCancellationThrow();
+if (isCanceled) return;</code></pre>
+
+<h3>配方 2：VContainer 注册与注入（模块 Installer 标准型）</h3>
+<pre class="codeblock"><code data-lang="cs">public sealed class ShopModuleInstaller : IInstaller
+{
+    public void Install(IContainerBuilder builder)
+    {
+        // 接口→实现（构造注入用；声明依赖 "Shop" 的模块可注入 IShopService）
+        builder.Register&lt;IShopService&gt;(_ =&gt; new ShopService(), Lifetime.Singleton);
+        // 已有实例 / 工厂拿容器 / EntryPoint：
+        builder.RegisterInstance(new ShopOptions { TaxRate = 0.1f });
+        builder.Register&lt;ShopRepo&gt;(r =&gt; new ShopRepo(r.Resolve&lt;IShopService&gt;()), Lifetime.Singleton);
+        builder.RegisterEntryPoint&lt;ShopTickService&gt;(Lifetime.Singleton);
+    }
+}
+
+// 消费方：构造注入（首选，依赖显式）——依赖声明了 Asset/Config 即可注入这两个服务
+public sealed class ShopModule : GameModuleBase
+{
+    public ShopModule(IAssetService asset, IConfigService cfg) { /* ... */ }
+}</code></pre>
+
+<h3>配方 3：工具包一行式</h3>
+<pre class="codeblock"><code data-lang="cs">// LitJson（框架 Utility.Json 默认实现，也可直接用）：
+string json = JsonMapper.ToJson(saveData, prettyPrint: true);
+var loaded = JsonMapper.ToObject&lt;SaveData&gt;(json);
+
+// ReadAssets（StreamingAssets 直读，Android APK 内同样可用）：
+string ver = BlankReadAssets.ReadAllText("version.txt");
+byte[] raw = BlankReadAssets.ReadAllBytes("data.bin");
+
+// Localization（切语言会持久化并广播三段事件，UIForm 自动刷新）：
+GameEntry.GetComponent&lt;LocalizationComponent&gt;().Language = "en_US";
+string s = GameEntry.GetComponent&lt;LocalizationComponent&gt;().GetString("UI.OK");</code></pre>
+
 <h2 id="unitask">1 UniTask：为什么全框架都用它</h2>
 
 <h3>1.1 与 Task / 协程的本质区别</h3>
@@ -99,7 +159,8 @@ scope.CreateChild(installer, "GameFrameY.Module.Asset");                  // 子
 builder.Register&lt;IServiceRegistry&gt;(r =&gt; new ServiceRegistry(r), Lifetime.Singleton);
 builder.Register&lt;IAssetService&gt;(_ =&gt; new AssetService(), Lifetime.Singleton);   // 接口→实现
 builder.RegisterInstance(new GameFrameYLaunchSettings());                        // 已有实例
-builder.RegisterEntryPoint&lt;GameModuleManager&gt;(Lifetime.Singleton);               // EntryPoint（自动 AsImplementedInterfaces）
+builder.RegisterInstance(new GameFrameYStartupStatus());                         // 启动状态
+builder.RegisterEntryPoint&lt;GameModuleManager&gt;(Lifetime.Singleton).AsSelf();       // EntryPoint + 具体类型解析
 // 流式：.As&lt;T&gt;() / AsImplementedInterfaces() / Keyed(obj) / WithParameter(name, value)
 
 // 解析（IObjectResolver）
@@ -107,7 +168,7 @@ resolver.Resolve&lt;T&gt;();            // 找不到抛 VContainerException
 resolver.TryResolve&lt;T&gt;(out var t); // 沿 Parent 链向上找，失败返回 false
 resolver.ResolveOrDefault&lt;T&gt;(default);
 resolver.Inject(instance);         // 对已存在对象补属性/方法注入</code></pre>
-<p>Lifetime 语义：<code>Transient</code>（每次新建）/<code>Singleton</code>（本作用域注册表没有则上抛 Parent 解析，最终根容器共享）/<code>Scoped</code>（本作用域缓存 + Dispose 链）。注入方式：构造函数（最多一个 [Inject] 构造）+ <code>[Inject]</code> 属性/字段/方法；构建期做循环依赖检查。诊断窗口：VContainer Diagnostics（EnableDiagnostics）。</p>
+<p>Lifetime 语义（源码级，见 09 章 §2）：<code>Transient</code>（每次新建）；<code>Singleton</code>——<strong>唯一性范围是"注册它的作用域"</strong>（注册在本作用域 → 缓存于本作用域、随作用域 Dispose 销毁；注册不在 → 上抛 Parent 解析；只有根容器注册的才是全局共享）；<code>Scoped</code>（本作用域缓存 + disposables 链）。注入方式：构造函数（最多一个 [Inject] 构造）+ <code>[Inject]</code> 属性/字段/方法；构建期做循环依赖检查。诊断窗口：VContainer Diagnostics（EnableDiagnostics）。模块的子作用域服务需显式导出到中央服务注册表，根 resolver 不会向下查找子作用域。</p>
 
 <div class="demo">
   <div class="demo-header"><span class="demo-tag">SIMULATOR</span>子作用域解析：沿链向上查找</div>
@@ -120,7 +181,7 @@ resolver.Inject(instance);         // 对已存在对象补属性/方法注入</
         <option value="0">根作用域</option>
       </select>
       <select id="vc-what" style="padding:6px 10px;border:1px solid var(--border-strong);border-radius:7px;background:var(--bg);color:var(--text);font-size:13px">
-        <option value="IAssetService">IAssetService（Asset 模块 Installer 注册）</option>
+        <option value="IAssetService">IAssetService（Asset 模块初始化时显式导出）</option>
         <option value="IServiceRegistry">IServiceRegistry（根注册）</option>
         <option value="IShopService">IShopService（谁都没注册）</option>
       </select>
@@ -274,7 +335,7 @@ bool added = loc.AddRawString("UI.OK", "确定");     // 字典注入入口（�
           nodes[0].style.borderColor = "var(--danger)";
         } else {
           nodes[loc].style.borderColor = "var(--ok)"; nodes[loc].style.background = "rgba(22,163,74,.1)";
-          dlog(log, "ok", "✓ 在【" + CHAIN[loc][0] + "】作用域命中 " + what + "，单例返回（Singleton 沿链共享）");
+          dlog(log, "ok", "✓ 在【" + CHAIN[loc][0] + "】作用域命中 " + what + "（Singleton 实例缓存于注册它的这个作用域——模块作用域注册的『单例』生命周期 = 模块生命周期）");
         }
         return;
       }

@@ -22,6 +22,43 @@
   </div>
 </header>
 
+<h2 id="quickstart">0 快速上手</h2>
+
+<h3>配方 1：加载 prefab 并实例化</h3>
+<pre class="codeblock"><code data-lang="cs">public sealed class HudModule : GameModuleBase
+{
+    private readonly IAssetService _asset;
+    private readonly List&lt;AssetHandle&gt; _handles = new();   // 模块级句柄登记簿
+
+    // 依赖声明 "Asset" ⇒ 构造注入 IAssetService（Bootstrap 阶段已装配）
+    public HudModule(IAssetService asset) { _asset = asset; }
+
+    public async UniTask SpawnHudAsync(Transform parent)
+    {
+        var handle = await _asset.LoadAssetAsync&lt;GameObject&gt;("UI/HUD");  // 地址=收集规则（AddressByFileName=文件名）
+        _handles.Add(handle);                       // ★ 登记：模块卸载时统一 Release
+        var hud = handle.InstantiateSync(parent);   // YooAsset 句柄直接实例化
+    }
+}</code></pre>
+<div class="code-caption">短生命周期加载（用完即弃）不必登记：局部变量 + finally 里 _asset.ReleaseHandle(handle)</div>
+
+<h3>配方 2：加载文本/字节（配置同款模式）</h3>
+<pre class="codeblock"><code data-lang="cs">var handle = await _asset.LoadAssetAsync&lt;TextAsset&gt;("tbitem");
+byte[] bytes = ((TextAsset)handle.AssetObject).bytes;
+_asset.ReleaseHandle(handle);        // bytes 已进托管内存，句柄立即归还</code></pre>
+
+<h3>配方 3：切换播放模式 / 指定 CDN</h3>
+<pre class="codeblock"><code data-lang="cs">// 唯一正确位置：GameFrameYStartup.ConfigureGameFrameXOptions（BeforeSceneLoad，容器构建之前）
+GameFrameXOptions.Configure(new AssetOptions { GamePlayMode = EPlayMode.HostPlayMode });
+
+// HostPlayMode 的资源服务器地址（ProcedurePatch 会传给 InitializeAsync）：
+// ① 代码：GameFrameYLaunchSettings.HostUrl / FallbackHostUrl
+// ② 配置：TbGlobal.PatchUrl（当前预置 http://127.0.0.1:8080/CDN/StandaloneWindows64/v1.0）</code></pre>
+<div class="callout warn">
+  <div class="callout-title">三铁律（详见 §5）</div>
+  <p>① 一次 Load 配一次 Release；② <code>UnloadAssetHandle(object)</code> 只认 AssetHandle 类型，传错<strong>静默忽略不报错</strong>；③ UI prefab 的句柄由 UI 框架自己持有，业务层别手动 Load/Release UI 资源。</p>
+</div>
+
 <h2 id="chain">1 调用链全景</h2>
 <pre class="codeblock"><code data-lang="text">业务模块（DemoModule / ConfigService / UIManager…）
    │  注入 IAssetService（GameFrameY 桥接，Bootstrap 模块 "Asset" 注册）
@@ -81,7 +118,7 @@ Handle 族（AssetHandle / SceneHandle / AllAssetsHandle / SubAssetsHandle / Raw
         if (op.Error == null && op.Status == EOperationStatus.Succeed && op.IsDone)
             tcs.TrySetResult(true);
         else
-            tcs.TrySetException(new Exception(op.Error));   // 自研层 ProcedurePatch 捕获后停留等待处理
+            tcs.TrySetException(new Exception(op.Error));   // 自研层 ProcedurePatch 捕获后进入 Failed 状态
     };
     return tcs.Task;
 }</code></pre>
@@ -140,14 +177,15 @@ await asset.InitializeAsync(EPlayMode.HostPlayMode, hostUrl, fallbackHostUrl);</
   </tbody>
 </table></div>
 
-<p><strong>核心语义：每次 Load 得到一个句柄 = 一份引用；<code>Release()</code>（即 Dispose）把引用计数减一，<strong>归零才真正卸载底层 Provider</strong>。</strong>没 Release 会泄漏，Release 多次会提前炸掉别人的引用。</p>
+<p><strong>核心语义：每次 Load 得到一个句柄 = 一份引用；<code>Release()</code>（即 Dispose）把引用计数减一；计数归零只是"可销毁"（CanDestroyProvider=true），<strong>真正卸载要等 <code>UnloadUnusedAssetsAsync</code> 惰性触发</strong>（两级计数：Provider 记资源引用、Loader 记 Bundle 引用，机制详见 09 章）。</strong>没 Release 会泄漏，Release 多次会提前炸掉别人的引用。</p>
 
 <div class="demo">
-  <div class="demo-header"><span class="demo-tag">SIMULATOR</span>句柄引用计数演示（以 tbitem.bytes 为例）</div>
+  <div class="demo-header"><span class="demo-tag">SIMULATOR</span>句柄引用计数演示（以 tbitem.bytes 为例）· 两级计数 + 惰性回收</div>
   <div class="demo-body">
     <div class="demo-controls">
       <button class="btn sm primary" id="rc-load">📥 LoadAssetAsync&lt;TextAsset&gt;("tbitem")</button>
       <button class="btn sm" id="rc-release">📤 ReleaseHandle(handle)</button>
+      <button class="btn sm" id="rc-unload">♻ UnloadUnusedAssetsAsync（触发惰性回收）</button>
       <button class="btn sm" id="rc-reset">↺ 重置</button>
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
@@ -208,34 +246,51 @@ downloader.BeginDownload();                                    // Pause/Resume/C
 <script>
 /* ================= 引用计数演示 ================= */
 (function initRc() {
-  var log = $("#rc-log"), count = 0, handles = [], seq = 0, loaded = false;
+  var log = $("#rc-log"), count = 0, handles = [], seq = 0, loaded = false, reclaimed = false;
   function render() {
     $("#rc-count").textContent = String(count);
     $("#rc-bar").style.width = Math.min(100, count * 33.3) + "%";
-    $("#rc-state").innerHTML = "Provider 状态：<strong style='color:" + (loaded ? "var(--ok)" : "var(--text-faint)") + "'>" + (loaded ? "已加载（AB 在内存）" : "未加载") + "</strong>";
+    var state;
+    if (!loaded) state = "<strong style='color:var(--text-faint)'>未加载</strong>";
+    else if (count > 0) state = "<strong style='color:var(--ok)'>已加载（AB 在内存）</strong>";
+    else if (!reclaimed) state = "<strong style='color:var(--warn)'>计数归零 · 待回收（CanDestroyProvider=true，但不会自动销毁）</strong>";
+    else state = "<strong style='color:var(--text-faint)'>已销毁（Provider 移除，Bundle 释放）</strong>";
+    $("#rc-state").innerHTML = "Provider 状态：" + state;
     $("#rc-handles").innerHTML = handles.length
       ? handles.map(function (h) { return "AssetHandle#" + h + " → tbitem.bytes"; }).join("<br>")
       : "（无）";
   }
   $("#rc-load").addEventListener("click", function () {
-    seq++; handles.push(seq); count++; loaded = true;
+    if (reclaimed) { dlog(log, "warn", "Provider 已销毁：再次 Load 会新建 Provider 并重新加载（复用已断）"); }
+    seq++; handles.push(seq); count++; loaded = true; reclaimed = false;
     dlog(log, "ok", "LoadAssetAsync(\"tbitem\") → 新句柄 #" + seq + "（Provider.RefCount = " + count + "）");
-    if (count === 2) dlog(log, "info", "└ 第二次 Load 复用同一个 Provider，计数 +1（不重复加载 AB）");
+    if (count === 2) dlog(log, "info", "└ 第二次 Load 复用同一个 Provider（providerGUID = 方法名+[AssetPath][类型]），计数 +1");
     if (count > 3) dlog(log, "warn", "└ 引用有点多了——检查是不是忘了 Release");
     render();
   });
   $("#rc-release").addEventListener("click", function () {
-    if (!handles.length) { dlog(log, "err", "ReleaseHandle：没有活跃句柄 —— 对已释放的句柄再 Release 是未定义行为（真机会炸）"); return; }
+    if (!handles.length) { dlog(log, "err", "ReleaseHandle：没有活跃句柄 —— 对已释放句柄再 Release 是未定义行为（真机会炸）"); return; }
     var h = handles.pop(); count--;
     dlog(log, "info", "ReleaseHandle(#" + h + ") → Provider.RefCount = " + count);
-    if (count === 0) { loaded = false; dlog(log, "ok", "✓ 引用归零，Provider 真正卸载，AB 资源释放"); }
+    if (count === 0 && loaded && !reclaimed) {
+      dlog(log, "warn", "⚠ 计数归零 ≠ 立即卸载：只是 CanDestroyProvider() 变 true。真正销毁要等 UnloadUnusedAssetsAsync / TryUnloadUnusedAsset 触发（惰性回收，原理见 09 章）");
+    }
+    render();
+  });
+  $("#rc-unload").addEventListener("click", function () {
+    if (!loaded || reclaimed) { dlog(log, "dim", "当前无可回收对象"); return; }
+    if (count > 0) { dlog(log, "warn", "UnloadUnusedAssetsAsync：Provider.RefCount = " + count + " > 0，CanDestroyProvider=false，跳过"); return; }
+    reclaimed = true;
+    dlog(log, "info", "UnloadUnusedAssetsAsync → loader.TryDestroyProviders()：CanDestroyProvider=true → Provider.DestroyProvider()");
+    dlog(log, "info", "└ Provider 销毁 → loader 引用计数减一（Bundle 级第二级计数）");
+    dlog(log, "ok", "✓ loader 计数归零 → DestroyLoader() → BundleFileInfo.UnloadBundleFile：AB 真正释放");
     render();
   });
   $("#rc-reset").addEventListener("click", function () {
-    count = 0; handles = []; seq = 0; loaded = false; log.innerHTML = ""; render();
+    count = 0; handles = []; seq = 0; loaded = false; reclaimed = false; log.innerHTML = ""; render();
   });
   render();
-  dlog(log, "info", "试试 Load 两次 → Release 两次，观察计数与 Provider 状态");
+  dlog(log, "info", "试试：Load 两次 → Release 两次 → 点「触发惰性回收」观察两级计数与真正卸载的时机");
 })();
 </script>
 </body>

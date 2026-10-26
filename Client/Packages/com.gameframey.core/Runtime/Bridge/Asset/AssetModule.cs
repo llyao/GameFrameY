@@ -1,3 +1,4 @@
+using Cysharp.Threading.Tasks;
 using GameFrameY.Core.Module;
 using VContainer;
 
@@ -7,6 +8,18 @@ namespace GameFrameY.Bridge.Asset
     [GameModule("Asset", Priority = 1000, InstallerType = typeof(AssetModuleInstaller))]
     public sealed class AssetModule : GameModuleBase
     {
+        private readonly IAssetService _service;
+
+        public AssetModule(IAssetService service)
+        {
+            _service = service;
+        }
+
+        public override UniTask OnInitializeAsync()
+        {
+            RegisterService(_service);
+            return UniTask.CompletedTask;
+        }
     }
 
     public sealed class AssetModuleInstaller : IInstaller

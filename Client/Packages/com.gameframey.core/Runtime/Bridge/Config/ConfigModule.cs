@@ -1,3 +1,4 @@
+using Cysharp.Threading.Tasks;
 using GameFrameY.Bridge.Asset;
 using GameFrameY.Core.Module;
 using VContainer;
@@ -8,6 +9,18 @@ namespace GameFrameY.Bridge.Config
     [GameModule("Config", Priority = 900, Dependencies = new[] { "Asset" }, InstallerType = typeof(ConfigModuleInstaller))]
     public sealed class ConfigModule : GameModuleBase
     {
+        private readonly IConfigService _service;
+
+        public ConfigModule(IConfigService service)
+        {
+            _service = service;
+        }
+
+        public override UniTask OnInitializeAsync()
+        {
+            RegisterService(_service);
+            return UniTask.CompletedTask;
+        }
     }
 
     public sealed class ConfigModuleInstaller : IInstaller

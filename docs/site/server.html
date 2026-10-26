@@ -108,6 +108,67 @@ git remote add upstream https://github.com/GameFrameX/GameFrameX.Server.git
 git fetch upstream && git diff HEAD upstream/main   # 评估差异
 # 本仓改动只有新增 Server/Config/ —— 后续优化建议以 patch 方式进行，便于同步</code></pre>
 
+<h2 id="deep">7 深读：背包全链路的真实代码</h2>
+<p>上游快照内置了完整可参照的背包实现。三层各是什么样子（均为真实源码摘录，去掉版权头）：</p>
+<pre class="codeblock"><code data-lang="cs">// ① 状态层（GameFrameX.Apps/Player/Bag/Entity/BagState.cs）——只有数据，MongoDB 透明持久化
+public sealed class BagState : CacheState
+{
+    public Dictionary&lt;int, BagItemState&gt; List { get; set; } = new();
+}
+public sealed class BagItemState
+{
+    public long ItemId { get; set; }
+    public long Count { get; set; }
+}
+
+// ② 组件外壳（.../Component/BagComponent.cs）——标记归属哪个 Actor 类型，两行完事
+[ComponentType(GlobalConst.ActorTypePlayer)]
+public sealed class BagComponent : StateComponent&lt;BagState&gt; { }
+
+// ③ 业务代理（GameFrameX.Hotfix/Logic/Player/Bag/BagComponentAgent.cs）——热更层
+public class BagComponentAgent : StateComponentAgent&lt;BagComponent, BagState&gt;
+{
+    public async Task&lt;BagState&gt; UpdateChanged(INetWorkChannel netWorkChannel, Dictionary&lt;int, long&gt; itemDic)
+    {
+        var bagState = OwnerComponent.State;                     // 直接摸状态
+        var notify = new NotifyBagInfoChanged();                 // 组推送
+        foreach (var item in itemDic)
+        {
+            if (bagState.List.TryGetValue(item.Key, out var value)) value.Count += item.Value;
+            else bagState.List[item.Key] = new BagItemState() { Count = item.Value, ItemId = item.Key };
+            /* ... 组 NotifyBagItem（含变化量与总量） ... */
+        }
+        // netWorkChannel 为空表示离线发放（统一奖励发放接口）：只持久化，不推送
+        if (netWorkChannel != null) await netWorkChannel.WriteAsync(notify);
+        await OwnerComponent.WriteStateAsync();                  // ★ 状态落盘（CacheState → MongoDB）
+        return bagState;
+    }
+}</code></pre>
+<div class="code-caption">一次业务变更的固定节奏：<strong>改 State → 组 Notify 推送 → WriteStateAsync 持久化</strong>；配置校验也有真实样例（OnRemoveBagItem 里 <code>ConfigComponent.Instance.GetConfig&lt;TbItemConfig&gt;().TryGet(...)</code> 对 TbItem 校验）</div>
+
+<p><strong>消息怎么进到代理</strong>——Handler 壳用泛型五件套把"消息→组件→代理"静态接起来（编译期即可追），自己只包 try/catch：</p>
+<pre class="codeblock"><code data-lang="cs">// GameFrameX.Hotfix/Logic/Player/Bag/ReqAddItemHandler.cs
+internal sealed class ReqAddItemHandler : PlayerRpcComponentHandler&lt;BagComponentAgent, ReqAddItem, RespAddItem&gt;
+{
+    protected override async Task ActionAsync(ReqAddItem request, RespAddItem response)
+    {
+        try { await ComponentAgent.OnAddBagItem(NetWorkChannel, request, response); }
+        catch (Exception e) { /* 统一错误处理 */ }
+    }
+}</code></pre>
+
+<h3>7.1 Launcher 启动管线（AppStartUpGame 真实顺序）</h3>
+<pre class="codeblock"><code data-lang="cs">ActorLimit.Init(ActorLimit.RuleType.None);                       // Actor 限流规则
+var initResult = await GameDb.Init&lt;MongoDbService&gt;(new DbOptions {
+    ConnectionString = Setting.DataBaseUrl, Name = Setting.DataBaseName });   // MongoDB
+await ComponentRegister.Init(typeof(AppsHandler).Assembly);       // 注册 Apps 层组件
+await HotfixManager.LoadHotfixModule(Setting);                    // 加载热更程序集
+await HotfixManager.Stop(exitMessage);                            // 主循环退出时优雅停机
+// Setting 默认值：InnerPort=29100（TCP）/ MetricsPort=29090 / HttpPort=28080 / WsPort=29110</code></pre>
+
+<h3>7.2 编译期分层：GFX0001~GFX0014</h3>
+<p><code>GameFrameX.Architecture.Analyzers</code>（netstandard2.0 Roslyn 分析器，以 analyzer 引用挂在 Apps/Hotfix/Launcher 上）共 <strong>14 条规则</strong>，按分析器类名覆盖六类约束：<code>CacheStateAssembly</code>（State 必须在 Apps）、<code>ComponentAgentAssembly / ComponentAgentName</code>（代理必须在 Hotfix + 命名后缀）、<code>EventListenerAssembly / EventListenerName / EventListenerSealed</code>、<code>HotfixBridgeAssembly</code>、<code>HttpHandlerAssembly</code> 等——<strong>"状态在 Apps、逻辑在 Hotfix"不是口头约定，是编译错误</strong>。这也解释了为什么 10 章实战里服务端落位表那样划分。</p>
+
 <footer class="pagenav"></footer>
 </main>
 </div>

@@ -58,6 +58,7 @@ GameFrameY/
 - **改关卡**：`Config/Datas/match3level.json` → `Config/gen-client.*` → 回 Unity 即生效。
 - **改美术**：`python tools/gen_match3_art.py`（纯 Python 画 PNG，调色在脚本里）。
 - **回归测试**：`cd tools/Match3BoardSmoke && dotnet run`（随机 300 局 × 400 次交换校验棋盘不变量——首版就抓出过一个越界 bug）。
+- **Core 模块 smoke**：`cd tools/CoreModuleSmoke && dotnet run`（覆盖稳定拓扑、重复名、缺失依赖、循环依赖和模块扫描过滤）。
 
 ### 3. 配置工作流
 
@@ -83,9 +84,9 @@ cd Server/Config && dotnet build     # 我们的服务端配置库（Luban 生�
 ## 核心概念
 
 - **模块**：`[GameModule("Name", Dependencies = new[]{"Asset"}, Startup = ModuleStartup.Deferred)]` 标记的类，
-  自动发现 → 依赖拓扑排序 → VContainer 链式子作用域装配（只能注入自己声明依赖的服务，未声明引用装配期即失败）。
-- **服务**：优先构造注入；`IServiceRegistry` 提供服务定位（两级查找）、登记/注销事件与 `WaitServiceAsync`（未就绪先等待）。
-- **流程**：`GameFrameYGameLauncher` 组装 Launch → Patch → LoadConfig → EnterGame 四流程；EnterGame 装配 Deferred 业务模块并广播 `GameFrameY.GameReady`。
+  自动发现 → 依赖拓扑排序 → VContainer 线性子作用域装配；`Dependencies` 用于排序和存在性校验，跨模块定位的服务必须显式导出到 `IServiceRegistry`。
+- **服务**：优先构造注入；`IServiceRegistry` 提供中央登记表 + 根作用域兜底、登记/注销事件与 `WaitServiceAsync`（未就绪先等待）。
+- **流程**：`GameFrameYGameLauncher` 组装 Launch → Patch → LoadConfig → EnterGame 四流程，并维护 `Created → Bootstrapping → Patching → LoadingConfig → EnteringGame → Ready` 启动状态；流程异常进入 `Failed`，EnterGame 只广播一次 `GameFrameY.GameReady`，模块 Shutdown 进入 `Stopping → Stopped`。
 
 详见 [docs/architecture.md](docs/architecture.md)。
 
@@ -93,7 +94,7 @@ cd Server/Config && dotnet build     # 我们的服务端配置库（Luban 生�
 
 每个包 / 每个模块的详细说明（API、机制、互动演示、真实代码示例）见 [docs/site/index.html](docs/site/index.html)——
 纯静态离线 HTML，双击即开：总览架构图、GameFrameY.Core 模块体系（拓扑排序模拟器）、GameFrameX 组件族、
-Asset/YooAsset、UI/场景、网络、UniTask/VContainer 底座、Luban 配置管线、服务端，共 9 章。目录见 [docs/site/README.md](docs/site/README.md)。
+Asset/YooAsset、UI/场景、网络、UniTask/VContainer 底座、Luban 配置管线、服务端、源码原理深读、端到端实战（从零做一个背包系统），共 11 章；每章按「快速上手 → API → 原理 → 内部/边界」组织。目录见 [docs/site/README.md](docs/site/README.md)。
 
 ## 冒烟/排障清单（首次打开工程）
 
@@ -114,4 +115,5 @@ Asset/YooAsset、UI/场景、网络、UniTask/VContainer 底座、Luban 配置�
 - [ ] HybridCLR 接入（Deferred 模块移入热更程序集，`InstallDeferredModulesAsync(assembly)` 装配）
 - [ ] Protobuf 生成工具接入（GameFrameX.Tools）与 NetworkService 联调
 - [ ] VContainer SourceGenerator 启用
-- [ ] CI（Luban 生成校验 + Server build + Client batchmode 编译检查）
+- [x] 根级 CI：Luban 生成一致性 + Core/Match3 smoke + Server build/test + package/asmdef 元数据检查
+- [ ] Unity 2022.3.54f1 batchmode 编译与 EditMode/PlayMode 启动 smoke（需要匹配 Unity runner）

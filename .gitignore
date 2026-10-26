@@ -10,6 +10,9 @@ MemoryCaptures/
 Recordings/
 
 *.csproj
+!tools/Match3BoardSmoke/Match3BoardSmoke.csproj
+!tools/CoreModuleSmoke/CoreModuleSmoke.csproj
+!Server/**/*.csproj
 *.sln
 *.suo
 *.tmp

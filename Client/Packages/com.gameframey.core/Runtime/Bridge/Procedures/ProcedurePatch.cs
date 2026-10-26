@@ -1,7 +1,9 @@
+using System;
 using Cysharp.Threading.Tasks;
 using GameFrameY.Core;
 using GameFrameY.Core.Module;
 using GameFrameY.Core.Service;
+using GameFrameY.Core.Startup;
 
 namespace GameFrameY.Bridge.Procedures
 {
@@ -11,8 +13,12 @@ namespace GameFrameY.Bridge.Procedures
     /// </summary>
     public sealed class ProcedurePatch : GameFrameYProcedure
     {
-        public ProcedurePatch(GameModuleManager modules, IServiceRegistry services, GameFrameYLaunchSettings settings)
-            : base(modules, services, settings)
+        public ProcedurePatch(
+            GameModuleManager modules,
+            IServiceRegistry services,
+            GameFrameYLaunchSettings settings,
+            GameFrameYStartupStatus startupStatus)
+            : base(modules, services, settings, startupStatus)
         {
         }
 
@@ -24,6 +30,7 @@ namespace GameFrameY.Bridge.Procedures
 
         private async UniTask PatchFlowAsync()
         {
+            StartupStatus.TryTransition(GameFrameYStartupState.Patching);
             // 等 GameFrameX 组件自身 Start() 完成初始化（两帧防御）。
             await UniTask.DelayFrame(2);
 
@@ -31,8 +38,8 @@ namespace GameFrameY.Bridge.Procedures
             var ok = await asset.InitializeAsync(Settings.PlayMode, Settings.HostUrl, Settings.FallbackHostUrl);
             if (!ok)
             {
-                GfyLog.Error($"资源包初始化失败（PlayMode={Settings.PlayMode}），停留在 Patch 流程等待处理");
-                return;
+                throw new InvalidOperationException(
+                    $"资源包初始化失败（PlayMode={Settings.PlayMode}）");
             }
 
             GfyLog.Info("资源包初始化完成");

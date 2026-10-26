@@ -12,6 +12,20 @@ namespace GameFrameY.Core.Module
     {
         public static IReadOnlyList<GameModuleDescriptor> Resolve(IReadOnlyList<Type> moduleTypes)
         {
+            return Resolve(moduleTypes, Array.Empty<string>());
+        }
+
+        /// <summary>
+        /// 解析指定程序集中的模块；<paramref name="satisfiedDependencies"/> 表示已经安装、可作为依赖上下文的模块名。
+        /// 这些模块不会出现在本次结果中，但可以满足新程序集模块的依赖声明。
+        /// </summary>
+        public static IReadOnlyList<GameModuleDescriptor> Resolve(
+            IReadOnlyList<Type> moduleTypes,
+            IReadOnlyCollection<string> satisfiedDependencies)
+        {
+            var satisfied = satisfiedDependencies == null
+                ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                : new HashSet<string>(satisfiedDependencies, StringComparer.OrdinalIgnoreCase);
             var descriptors = new List<GameModuleDescriptor>();
             var byName = new Dictionary<string, GameModuleDescriptor>(StringComparer.OrdinalIgnoreCase);
             foreach (var type in moduleTypes)
@@ -38,13 +52,13 @@ namespace GameFrameY.Core.Module
 
             void Visit(GameModuleDescriptor descriptor, Stack<string> path)
             {
+                if (visiting.Contains(descriptor.Name))
+                {
+                    throw new GameModuleException($"模块依赖成环: {string.Join(" -> ", path.Reverse())} -> {descriptor.Name}");
+                }
+
                 if (visited.Contains(descriptor.Name))
                 {
-                    if (visiting.Contains(descriptor.Name))
-                    {
-                        throw new GameModuleException($"模块依赖成环: {string.Join(" -> ", path.Reverse())} -> {descriptor.Name}");
-                    }
-
                     return;
                 }
 
@@ -54,7 +68,12 @@ namespace GameFrameY.Core.Module
                 {
                     if (!byName.TryGetValue(dependencyName, out var dependency))
                     {
-                        throw new GameModuleException($"模块 {descriptor.Name} 声明的依赖 [{dependencyName}] 未在扫描结果中找到");
+                        if (satisfied.Contains(dependencyName))
+                        {
+                            continue;
+                        }
+
+                        throw new GameModuleException($"模块 {descriptor.Name} 声明的依赖 [{dependencyName}] 未在扫描结果中找到，也不在已安装模块中");
                     }
 
                     Visit(dependency, path);

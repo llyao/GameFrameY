@@ -6,10 +6,10 @@ using Cysharp.Threading.Tasks;
 namespace GameFrameY.Core.Service
 {
     /// <summary>
-    /// 服务发现入口（两级查找）：
+    /// 服务发现入口（中央登记表 + 根容器兜底）：
     /// 1. 中央注册表 —— 模块运行期用 <c>RegisterService</c> 登记的实例（含归属模块、增删事件）；
-    /// 2. 根容器兜底 —— 各模块 Installer 注册的类型服务（VContainer TryResolve）。
-    /// 构造注入仍然是首选的消费方式；本接口面向无法注入的场景（热更代码、场景对象、调试）。
+    /// 2. 根容器兜底 —— 根作用域直接注册的类型服务（VContainer TryResolve）。
+    /// 模块子作用域的 Installer 服务必须由模块显式登记到中央注册表；构造注入仍是首选的消费方式。
     /// </summary>
     public interface IServiceRegistry
     {

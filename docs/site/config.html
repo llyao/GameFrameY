@@ -22,6 +22,37 @@
   </div>
 </header>
 
+<h2 id="quickstart">0 快速上手</h2>
+
+<h3>配方 1：业务侧读表的正确姿势</h3>
+<pre class="codeblock"><code data-lang="cs">// 注入 IConfigService（依赖声明 "Config"）；表在 ProcedureLoadConfig 已全部加载：
+var tables = Services.GetService&lt;IConfigService&gt;().Tables;
+
+// map 表：按键取（找不到不炸）
+Item sword = tables.TbItem.GetOrDefault(10001);      // null if 缺失（安全）
+Item must  = tables.TbItem.Get(10001);               // 缺失抛 KeyNotFound（确定存在时用）
+Item same  = tables.TbItem[10001];                   // 索引器 = Get
+
+// one 单例表：字段直达（生成代码做了属性转发）
+string patchUrl = tables.TbGlobal.PatchUrl;
+
+// 枚举是强类型（生成 ItemQuality），可 switch / 显式转 int：
+if (sword.Quality == ItemQuality.Orange) { /* ... */ }
+
+// 全量遍历：
+foreach (var server in tables.TbServerList.DataList)
+    Debug.Log($"{server.Name} {server.Host}:{server.Port} ({server.State})");
+// 需要字典视图时：tables.TbServerList.DataMap（IReadOnlyDictionary&lt;int, ServerInfo&gt;）</code></pre>
+
+<h3>配方 2：加一张新表的完整清单</h3>
+<ol>
+  <li><code>Defines/schema.xml</code>：&lt;bean&gt; 定义字段（首字段即 map 表 key）+ &lt;table&gt; 声明（input 文件名、可选 group）；</li>
+  <li><code>Datas/xxx.json</code>：写数据（map 表是数组，mode=one 表是对象）；</li>
+  <li><code>./gen-client.sh &amp;&amp; ./gen-server.sh</code>；</li>
+  <li>回 Unity：新 bytes 自动被 ConfigService 反射纳入加载（零代码）；Collector 若报 GUID 不匹配点 Fix（见 03 章）；</li>
+  <li>业务侧直接 <code>tables.TbXxx</code>——生成的 Tables 属性即新表。</li>
+</ol>
+
 <h2 id="pipeline">1 管线全景</h2>
 <pre class="codeblock"><code data-lang="text">Config/
 ├── Defines/schema.xml ──┐   Defines/builtin.xml（vector2/3/4 内置类型）

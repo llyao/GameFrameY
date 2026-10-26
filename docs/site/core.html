@@ -14,13 +14,45 @@
 <header class="hero">
   <span class="chapter">CH.01 · 自研核心层</span>
   <h1>GameFrameY.Core — 模块管理与服务发现</h1>
-  <p class="lede">整个仓库的核心交付：<code>com.gameframey.core</code>（v0.1.0）用 VContainer 实现了<strong>模块自动发现 → 依赖拓扑排序 → 链式子作用域装配</strong>的模块体系，配合 <code>IServiceRegistry</code> 的两级服务发现，再把六个 GameFrameX 组件桥接成服务。本章逐文件拆解，并附两个可交互演示。</p>
+  <p class="lede">整个仓库的核心交付：<code>com.gameframey.core</code>（v0.1.0）用 VContainer 实现了<strong>模块自动发现 → 依赖拓扑排序 → 线性子作用域装配</strong>的模块体系，配合 <code>IServiceRegistry</code> 的中央登记表 + 根作用域兜底，再把六个 GameFrameX 组件桥接成服务。本章逐文件拆解，并附两个可交互演示。</p>
   <div class="hero-facts">
     <span class="chip acc">com.gameframey.core 0.1.0</span>
     <span class="chip">依赖：VContainer 1.19 + UniTask 2.6</span>
     <span class="chip">Runtime/Core + Runtime/Bridge 两个 asmdef</span>
   </div>
 </header>
+
+<h2 id="quickstart">0 快速上手</h2>
+
+<h3>配方 1：业务模块从 GameReady 开始干活</h3>
+<pre class="codeblock"><code data-lang="cs">// Deferred 模块在 EnterGame 流程装配，天然晚于配置加载——直接用即可：
+public override UniTask OnStartAsync()
+{
+    var item = Services.GetService&lt;IConfigService&gt;().Tables.TbItem.GetOrDefault(10001);
+    return UniTask.CompletedTask;
+}
+
+// 不依赖配置的早期代码（如 Bootstrap 阶段模块）等 GameReady 事件再动：
+GameEntry.GetComponent&lt;EventComponent&gt;()
+    .CheckSubscribe(GameFrameYEventIds.GameReady, (sender, e) =&gt; EnterLobby());
+
+// 或者"未就绪先等待"（目标服务可能晚于自己登记）：
+IShopService shop = await Services.WaitServiceAsync&lt;IShopService&gt;();</code></pre>
+
+<h3>配方 2：声明一个模块（三分钟版）</h3>
+<pre class="codeblock"><code data-lang="cs">// Assets/GameFrameY/Game/Modules/ 下新建：
+[GameModule("Shop", Startup = ModuleStartup.Deferred,          // EnterGame 流程装配（业务模块默认选择）
+            Dependencies = new[] { "Config", "Asset", "UI" })] // ★ 只列真正要注入的服务来源
+public sealed class ShopModule : GameModuleBase, ITickableModule
+{
+    public override UniTask OnStartAsync()
+    {
+        RegisterService(new ShopService());                     // 动态登记 → 别处 WaitServiceAsync 可见
+        return UniTask.CompletedTask;
+    }
+    public void OnTick(float dt, float rdt) { /* 每帧（仅 Started 状态收到） */ }
+}</code></pre>
+<div class="code-caption">零配置：标记即被发现（ModuleScanner 扫描 AppDomain），重启 Play 即生效。完整模板与 Installer 见 §7；装配顺序的原理见 §2.6</div>
 
 <h2 id="asmdef">1 程序集划分与依赖</h2>
 <div class="table-wrap"><table>
@@ -100,13 +132,13 @@ public interface ILateTickableModule  { void OnLateTick(float elapseSeconds, flo
 <ol>
   <li>为每个类型建 <code>GameModuleDescriptor</code>，按名查重，重名抛异常；</li>
   <li>种子序列 = <code>OrderBy(Priority).ThenBy(Name, Ordinal)</code>——注意是对<strong>全量模块</strong>排序（含 Deferred），阶段过滤发生在解析之后；</li>
-  <li>对每个种子做 DFS：先递归访问全部依赖（后序输出 ⇒ 依赖先装配），依赖缺失抛 <code>"模块 {name} 声明的依赖 [{dep}] 未在扫描结果中找到"</code>，遇到回边抛 <code>"模块依赖成环: A -&gt; B -&gt; A"</code>；</li>
+  <li>对每个种子做 DFS：先递归访问全部依赖（后序输出 ⇒ 依赖先装配），依赖缺失抛 <code>"模块 {name} 声明的依赖 [{dep}] 未在扫描结果中找到，也不在已安装模块中"</code>；显式装配热更程序集时，已安装模块可作为依赖上下文；遇到回边抛 <code>"模块依赖成环: A -&gt; B -&gt; A"</code>；</li>
   <li>结果回写 <code>InstallOrder</code>。</li>
 </ol>
 
-<div class="callout warn">
-  <div class="callout-title">源码级发现：v0.1 的环检测是死代码</div>
-  <p><code>ModuleDependencyResolver.Visit</code> 里环检测写的是 <code>if (visited.Contains(name)) { if (visiting.Contains(name)) throw 成环; return; }</code>——但"正在访问中"的节点<strong>不在 visited</strong>（完成前不会加入），而完成时又会先 <code>visiting.Remove</code> 再 <code>visited.Add</code>，两个集合永不同时含同一名字。于是真正的依赖环不会触发友好报错，而是<strong>无限递归直到栈溢出</strong>。修法很简单：先查 <code>visiting.Contains</code> 抛环，再查 <code>visited</code> 返回。下方模拟器按修正后的语义实现（所以能给出漂亮的成环路径报错）。</p>
+<div class="callout info">
+  <div class="callout-title">依赖环检测已纳入运行时门禁</div>
+  <p><code>ModuleDependencyResolver.Visit</code> 先检查 <code>visiting</code> 再检查 <code>visited</code>，检测到回边会抛出包含完整路径的 <code>GameModuleException</code>；独立 Core smoke 已覆盖两节点循环依赖。</p>
 </div>
 
 <div class="demo">
@@ -128,24 +160,23 @@ public interface ILateTickableModule  { void OnLateTick(float elapseSeconds, flo
 
 <h3>2.6 装配与驱动：GameModuleManager</h3>
 <p>管理器本身是根容器的 <strong>VContainer EntryPoint</strong>（实现 <code>ITickable / IFixedTickable / ILateTickable</code>，挂 PlayerLoop，无需 MonoBehaviour）。装配核心两阶段：</p>
-<pre class="codeblock"><code data-lang="cs">// 阶段一（逐个交错：建作用域 + Init）
+<pre class="codeblock"><code data-lang="cs">// 阶段一：逐个建作用域 + Initialize，批次成功前保留回滚上下文
 foreach (var descriptor in descriptors)
 {
-    var installer = CreateInstaller(descriptor);            // InstallerType + 模块类型本身包成 ModuleScopeInstaller
-    var parent = _lastCreatedScope ?? _rootScope;           // ★ 链式作用域：以"上一个创建的作用域"为父
-    var scope = parent.CreateChild(installer, $"GameFrameY.Module.{descriptor.Name}");
+    var parent = batchLastScope ?? _rootScope;
+    var scope = parent.CreateChild(CreateInstaller(descriptor), $"GameFrameY.Module.{descriptor.Name}");
     var module = (IGameModule)scope.Container.Resolve(descriptor.ModuleType);
-    await module.OnInitializeAsync();                        // 每装一个就 Init 一个
+    await module.OnInitializeAsync();
+    batch.Add(descriptor);
 }
-// 阶段二（同批按装配序串行启动）
-foreach (var descriptor in _installed.Where(d =&gt; d.State == GameModuleState.Initialized))
+// 阶段二：只启动当前批次；全部成功后提交 _lastCreatedScope
+foreach (var descriptor in batch)
 {
     await descriptor.ModuleInstance.OnStartAsync();
-    descriptor.State = GameModuleState.Started;
 }</code></pre>
-<div class="code-caption">Runtime/Core/Module/GameModuleManager.cs（InstallCoreAsync 节选）——整体顺序：Init(M1)→…→Init(Mn)→Start(M1)→…→Start(Mn)</div>
+<div class="code-caption">Runtime/Core/Module/GameModuleManager.cs（InstallCoreAsync 节选）——初始化和启动失败会逆序注销服务、释放作用域，并允许下一次安装重试</div>
 
-<p><strong>作用域链</strong>是本章最重要的架构约束：第 N 个模块的子作用域以第 N-1 个为父，形成 <code>Root → M1 → M2 → … → Mn</code> 线性链。VContainer 子作用域只能向上解析，因此模块能构造注入的 = 自己 Installer 注册的 + 声明过依赖的（保证在祖先链上）+ 根作用域的。未声明的跨模块引用在装配期即失败——<strong>依赖声明即保护</strong>。</p>
+<p><strong>作用域链</strong>是当前 v0.1 的线性父链：第 N 个模块的子作用域以第 N-1 个为父，依赖声明用于排序与存在性校验，不能单独提供严格访问隔离。需要跨模块定位的服务应由模块显式登记到中央 <code>IServiceRegistry</code>；VContainer 子作用域仍可沿父链解析构造注入所需的注册。</p>
 
 <div class="callout info">
   <div class="callout-title">真实装配顺序是怎么算出来的</div>
@@ -178,20 +209,20 @@ foreach (var descriptor in _installed.Where(d =&gt; d.State == GameModuleState.I
 <p>其余职责：</p>
 <ul>
   <li><strong>Tick 泵</strong>：每帧遍历 <code>_installed</code>（装配序），仅 <code>Started</code> 且实现对应接口的模块收到回调；单模块异常捕获记日志不中断其他模块。</li>
-  <li><strong>ShutdownAsync</strong>：逆序卸载——仅 Initialized/Started 状态才调 <code>OnShutdownAsync</code>（异常吞掉记日志）→ <code>ServiceRegistry.UnregisterAll(模块名)</code> 注销其登记的服务 → <code>scope.Dispose()</code>。</li>
-  <li><strong>幂等</strong>：<code>InitializeBootstrapModulesAsync</code> 有 <code>_bootstrapInstalled</code> 防重入；<code>InstallDeferredModulesAsync</code> 过滤已装配的。</li>
+  <li><strong>ShutdownAsync</strong>：逆序卸载——仅 Installing/Initialized/Started 状态且已有实例才调 <code>OnShutdownAsync</code>（异常记日志）→ 先完成服务内部注销，再派发 Removed 事件 → <code>scope.Dispose()</code>。</li>
+  <li><strong>幂等</strong>：<code>InitializeBootstrapModulesAsync</code> 仅在整批成功后设置 <code>_bootstrapInstalled</code>；安装失败会清理临时模块并允许重试；<code>InstallDeferredModulesAsync</code> 过滤已装配的。</li>
   <li><strong>Installer 包装</strong>：<code>ModuleScopeInstaller</code> 先 <code>builder.Register(模块类型, 模块类型, Singleton)</code>（模块实例由自己作用域创建），再执行业务 Installer。</li>
 </ul>
 
 <h2 id="service">3 服务发现（Core/Service）</h2>
-<p><code>IServiceRegistry</code> 的两级查找语义：① <strong>中央注册表</strong>——模块运行期 <code>RegisterService(new Xxx())</code> 登记的实例（含归属模块、增删事件）；② <strong>根容器兜底</strong>——各模块 Installer 注册的类型服务（VContainer <code>TryResolve</code>）。消费优先级：<strong>构造注入 &gt; 服务定位</strong>（后者面向热更代码 / 场景对象 / 调试）。</p>
+<p><code>IServiceRegistry</code> 的查找语义：① <strong>中央注册表</strong>——模块运行期显式登记的实例（含归属模块、增删事件）；② <strong>根容器兜底</strong>——根作用域直接注册的类型服务（VContainer <code>TryResolve</code>）。模块子作用域的 Installer 服务不会被根 resolver 向下发现，必须由模块初始化时显式导出。消费优先级：<strong>构造注入 &gt; 服务定位</strong>（后者面向热更代码 / 场景对象 / 调试）。</p>
 
 <div class="table-wrap"><table>
   <thead><tr><th>API</th><th>说明</th></tr></thead>
   <tbody>
     <tr><td><code>event Action&lt;ServiceChangeEventArgs&gt; ServiceChanged</code></td><td>Added / Removed 变更事件（参数含 ServiceDescriptor）</td></tr>
     <tr><td><code>Register&lt;T&gt;(T instance, string ownerModuleId = null)</code></td><td>登记实例；类型校验 + ReferenceEquals 去重（重复静默返回）</td></tr>
-    <tr><td><code>TryGetService&lt;T&gt;(out T)</code> / <code>GetService&lt;T&gt;()</code></td><td>两级查找；GetService 失败抛 <code>ServiceRegistryException</code></td></tr>
+    <tr><td><code>TryGetService&lt;T&gt;(out T)</code> / <code>GetService&lt;T&gt;()</code></td><td>中央登记表优先，未命中时查根作用域；GetService 失败抛 <code>ServiceRegistryException</code></td></tr>
     <tr><td><code>GetServices&lt;T&gt;()</code> / <code>GetAllServices(Type)</code></td><td>多实现聚合（中央表全部 + 容器 IEnumerable，按引用去重）</td></tr>
     <tr><td><code>Unregister&lt;T&gt;(T)</code> / <code>UnregisterAll(ownerModuleId)</code></td><td>注销；模块卸载时管理器自动调 UnregisterAll</td></tr>
     <tr><td><code>UniTask&lt;T&gt; WaitServiceAsync&lt;T&gt;(CancellationToken)</code></td><td><strong>未就绪先等待</strong>：订阅 ServiceChanged 后二次检查防竞态，命中即完成</td></tr>
@@ -216,7 +247,7 @@ foreach (var descriptor in _installed.Where(d =&gt; d.State == GameModuleState.I
         <div id="svc-central" class="info-panel" style="min-height:84px;margin-top:0;font-family:var(--mono);font-size:12.5px">（空）</div>
       </div>
       <div>
-        <div style="font-size:12px;font-weight:700;color:var(--text-faint);margin-bottom:6px">根容器（模块 Installer 注册的类型服务）</div>
+        <div style="font-size:12px;font-weight:700;color:var(--text-faint);margin-bottom:6px">根容器（仅根作用域直接注册的类型服务）</div>
         <div id="svc-container" class="info-panel" style="min-height:84px;margin-top:0;font-family:var(--mono);font-size:12.5px">IAssetService → AssetService<br>IConfigService → ConfigService<br>…（六桥接模块装配时注册）</div>
       </div>
     </div>
@@ -225,9 +256,18 @@ foreach (var descriptor in _installed.Where(d =&gt; d.State == GameModuleState.I
 </div>
 
 <h2 id="bridge">4 六大桥接模块（Bridge/）</h2>
-<p>六个 Bootstrap 模块把 GameFrameX 组件包装成服务。共同实现模式：<strong>模块类是空壳（仅声明特性），Installer 注册服务单例，服务用惰性静态属性解析组件、自身无状态</strong>：</p>
+<p>六个 Bootstrap 模块把 GameFrameX 组件包装成服务。共同实现模式：<strong>模块通过 Installer 在自己的子作用域注册服务，再在 OnInitializeAsync 中将同一实例显式导出到中央注册表；服务用惰性静态属性解析组件、自身无状态</strong>：</p>
 <pre class="codeblock"><code data-lang="cs">[GameModule("Asset", Priority = 1000, InstallerType = typeof(AssetModuleInstaller))]
-public sealed class AssetModule : GameModuleBase { }
+public sealed class AssetModule : GameModuleBase
+{
+    private readonly IAssetService service;
+    public AssetModule(IAssetService service) =&gt; this.service = service;
+    public override UniTask OnInitializeAsync()
+    {
+        RegisterService(service);                 // 导出同一 child 实例到中央表
+        return UniTask.CompletedTask;
+    }
+}
 
 public sealed class AssetModuleInstaller : IInstaller
 {
@@ -255,7 +295,7 @@ public sealed class AssetService : IAssetService
     <tr><td><code>Event</code></td><td>1200</td><td>—</td><td><code>IEventService</code></td><td>EventComponent</td><td><code>Subscribe / Unsubscribe / Fire(string) / Fire(GameEventArgs)</code>（订阅幂等）</td></tr>
   </tbody>
 </table></div>
-<p class="table-note">为什么 Config 声明依赖 Asset：ConfigService 构造注入 IAssetService，需要保证 Asset 模块的服务在自己作用域的祖先链上可见——依赖声明保证装配顺序，VContainer 沿链解析。</p>
+<p class="table-note">为什么 Config 声明依赖 Asset：ConfigService 构造注入 IAssetService，需要保证 Asset 先完成装配并位于自己的父链上；依赖声明负责排序与存在性校验。ConfigModule 初始化时再把同一 IConfigService 实例显式导出到中央服务表。</p>
 
 <p><code>IConfigService.LoadAsync</code> 的实现是理解配置链路的钥匙（详见 <a href="config.html">07 章</a>）：反射枚举 <code>cfg.Tables</code> 全部公共属性，以<strong>属性名小写</strong>为 YooAsset 地址加载 <code>TextAsset</code>，取 bytes 后用 Luban 约定委托构造：</p>
 <pre class="codeblock"><code data-lang="cs">foreach (var property in properties)
@@ -281,12 +321,13 @@ private static void Bootstrap()
     Object.DontDestroyOnLoad(scope.gameObject);
 }
 
-// ② 根注册器：四件套
+// ② 根注册器：五件套
 public void Install(IContainerBuilder builder)
 {
     builder.Register&lt;IServiceRegistry&gt;(r =&gt; new ServiceRegistry(r), Lifetime.Singleton);
     builder.RegisterInstance(new GameFrameYLaunchSettings());
-    builder.RegisterEntryPoint&lt;GameModuleManager&gt;(Lifetime.Singleton);        // Tick 泵
+    builder.RegisterInstance(new GameFrameYStartupStatus());
+    builder.RegisterEntryPoint&lt;GameModuleManager&gt;(Lifetime.Singleton).AsSelf(); // Tick 泵 + 具体类型注入
     builder.RegisterEntryPoint&lt;GameFrameYGameLauncher&gt;(Lifetime.Singleton);  // 启动协调器
 }
 
@@ -304,9 +345,9 @@ public async UniTask StartAsync(CancellationToken cancellation)
   <thead><tr><th>流程</th><th>做什么</th><th>失败行为</th></tr></thead>
   <tbody>
     <tr><td><code>ProcedureLaunch</code></td><td>打启动横幅日志，立即 <code>GoTo&lt;ProcedurePatch&gt;()</code></td><td>—</td></tr>
-    <tr><td><code>ProcedurePatch</code></td><td><code>DelayFrame(2)</code> 两帧防御等组件自身 Start → <code>IAssetService.InitializeAsync(PlayMode, HostUrl, Fallback)</code> 初始化 YooAsset 包（EditorSimulate 下直接成功）</td><td>失败不跳转，停留等待处理</td></tr>
-    <tr><td><code>ProcedureLoadConfig</code></td><td><code>IConfigService.LoadAsync()</code>，打日志"TbItem N 条，TbServerList N 条"</td><td>异常被 RunFlow 捕获记日志，停留当前流程</td></tr>
-    <tr><td><code>ProcedureEnterGame</code></td><td><code>InstallDeferredModulesAsync()</code> 装配业务模块 → <code>Fire(GameFrameYEventIds.GameReady)</code></td><td>同上</td></tr>
+    <tr><td><code>ProcedurePatch</code></td><td><code>DelayFrame(2)</code> 两帧防御等组件自身 Start → <code>IAssetService.InitializeAsync(PlayMode, HostUrl, Fallback)</code> 初始化 YooAsset 包（EditorSimulate 下直接成功）</td><td>失败抛出异常，由 <code>RunFlow</code> 记录并进入 <code>Failed</code></td></tr>
+    <tr><td><code>ProcedureLoadConfig</code></td><td><code>IConfigService.LoadAsync()</code>，打日志"TbItem N 条，TbServerList N 条"</td><td>异常由 <code>RunFlow</code> 捕获并进入 <code>Failed</code></td></tr>
+    <tr><td><code>ProcedureEnterGame</code></td><td><code>InstallDeferredModulesAsync()</code> 装配业务模块 → 首次成功进入 <code>Ready</code> 后 <code>Fire(GameFrameYEventIds.GameReady)</code></td><td>异常进入 <code>Failed</code>；重复进入不会重复广播</td></tr>
   </tbody>
 </table></div>
 <p>流程基类 <code>GameFrameYProcedure</code> 提供了 <strong>RunFlow</strong> 助手——在 FSM 的同步回调 <code>OnEnter</code> 里安全启动异步流程：</p>
@@ -315,9 +356,10 @@ public async UniTask StartAsync(CancellationToken cancellation)
     UniTask.Void(async () =&gt;
     {
         try { await flow(); }
-        catch (Exception e) { GfyLog.Error($"流程 {GetType().Name} 异步流程异常: {e}"); }  // 停留在当前流程
+        catch (Exception e) { StartupStatus.TryFail(e); GfyLog.Error($"流程 {GetType().Name} 异步流程异常: {e}"); }
     });
 }</code></pre>
+<p>启动状态由 <code>GameFrameYStartupStatus</code> 统一维护：失败可从 <code>Failed</code> 重试，模块管理器关闭时进入 <code>Stopping → Stopped</code>；<code>TryMarkGameReady()</code> 保证 <code>GameReady</code> 只广播一次。</p>
 <p>事件常量目前只有一个：<code>GameFrameYEventIds.GameReady = "GameFrameY.GameReady"</code>。</p>
 
 <h2 id="demo">6 参考实现：Demo 业务模块（全文 51 行）</h2>
@@ -379,12 +421,12 @@ public sealed class ShopModuleInstaller : IInstaller
     }
 }</code></pre>
 </div>
-<p>要点：① 名字即依赖声明的键，别重名；② 只在 Dependencies 里声明真正要注入的服务来源模块；③ 需要每帧逻辑就实现 <code>ITickableModule</code>；④ 热更程序集加载后用 <code>InstallDeferredModulesAsync(assembly)</code> 二次装配（HybridCLR 预留）。</p>
+<p>要点：① 名字即依赖声明的键，别重名；② <code>Dependencies</code> 负责排序与存在性校验，显式装配热更程序集时可引用已安装模块，但不能单独提供访问隔离；③ 需要跨模块定位的服务由拥有模块在 <code>OnInitializeAsync</code> 中显式登记；④ 需要每帧逻辑就实现 <code>ITickableModule</code>；⑤ 热更程序集加载后用 <code>InstallDeferredModulesAsync(assembly)</code> 二次装配（HybridCLR 预留）。</p>
 
 <h2 id="limits">8 已知边界（v0.1）</h2>
 <ul>
-  <li>作用域链是<strong>线性链</strong>：先装模块的服务对后装模块全部可见（声明依赖是"保证可见"的子集）；卸载单个中间模块会破坏链——v0.1 只支持整体 <code>ShutdownAsync</code> 逆序卸载。</li>
-  <li><strong>依赖环不会得到友好报错</strong>：<code>ModuleDependencyResolver</code> 的环检测因检查顺序问题形同虚设（见 §2.5 的源码级发现），真实环会栈溢出；建议先查 <code>visiting</code> 再查 <code>visited</code>。</li>
+  <li>作用域链是<strong>线性链</strong>：先装模块的容器注册对后装模块可见，依赖声明用于排序与存在性校验；需要严格访问隔离时仍需后续重构。卸载单个中间模块会破坏链——v0.1 只支持整体 <code>ShutdownAsync</code> 逆序卸载。</li>
+  <li><strong>依赖环已得到友好报错</strong>：<code>ModuleDependencyResolver</code> 先检查 <code>visiting</code> 再检查 <code>visited</code>，检测到回边会抛出包含路径的 <code>GameModuleException</code>；Core smoke 已覆盖该场景。</li>
   <li>HostPlayMode 的静态版本 / 清单 / 断点续传下载流未实现（<code>InitializeAsync</code> 仅初始化包）。</li>
   <li>HybridCLR 未启用，但 <code>InstallDeferredModulesAsync(params Assembly[])</code> 入口已预留。</li>
   <li>VContainer SourceGenerator 未启用（反射注入模式）。</li>
@@ -425,7 +467,7 @@ function topoResolve(list) {
     visiting[key] = true; path.push(m.name);
     m.deps.forEach(function (d) {
       var dep = byName[d.toLowerCase()];
-      if (!dep) throw { kind: "missing", msg: "模块 " + m.name + " 声明的依赖 [" + d + "] 未在扫描结果中找到" };
+      if (!dep) throw { kind: "missing", msg: "模块 " + m.name + " 声明的依赖 [" + d + "] 未在扫描结果或已安装模块中找到" };
       visit(dep, path);
     });
     path.pop(); delete visiting[key]; visited[key] = true;
@@ -532,7 +574,7 @@ function topoResolve(list) {
   $("#svc-wait").addEventListener("click", function () {
     if (waiterPending) { dlog(log, "warn", "等待者已挂起（UniTaskCompletionSource 未完成）"); return; }
     waiterPending = true;
-    dlog(log, "info", "WaitServiceAsync&lt;IDemoGreetingService&gt;()：两级查找未命中 → 挂起等待 ServiceChanged");
+    dlog(log, "info", "WaitServiceAsync&lt;IDemoGreetingService&gt;()：中央登记表与根作用域均未命中 → 挂起等待 ServiceChanged");
     dlog(log, "info", "└ 防御：订阅事件后立即二次检查，避免「登记发生在查与订阅之间」的竞态");
   });
   $("#svc-install").addEventListener("click", function () {
