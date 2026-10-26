@@ -21,8 +21,13 @@ namespace GameFrameY.Game.Modules.Match3
 
         private static readonly Color32[] GemColors =
         {
-            default, new(255, 86, 86), new(255, 158, 62), new(255, 214, 72),
-            new(98, 220, 90), new(84, 158, 255), new(176, 106, 255),
+            default,
+            new Color32(255, 86, 86, 255),
+            new Color32(255, 158, 62, 255),
+            new Color32(255, 214, 72, 255),
+            new Color32(98, 220, 90, 255),
+            new Color32(84, 158, 255, 255),
+            new Color32(176, 106, 255, 255),
         };
 
         private readonly IAssetService _assetService;

@@ -139,7 +139,7 @@ namespace GameFrameY.Game.Modules.Match3
         {
             for (var i = rect.childCount - 1; i >= 0; i--)
             {
-                Object.Destroy(rect.GetChild(i).gameObject);
+                UnityEngine.Object.Destroy(rect.GetChild(i).gameObject);
             }
         }
     }

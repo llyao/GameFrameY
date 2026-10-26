@@ -6,6 +6,8 @@
         "UniTask.Runtime",
         "UnityEngine.UI",
         "YooAsset.Runtime",
+        "Luban.Runtime",
+        "GameFrameX.Event.Runtime",
         "GameFrameY.Core",
         "GameFrameY.Bridge",
         "GameFrameY.Config"

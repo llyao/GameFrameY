@@ -19,6 +19,7 @@ namespace GameFrameY.Game.Modules.Match3
         private readonly CancellationTokenSource _cts = new();
 
         private GameObject _root;
+        private RectTransform _rootRect;
         private GameObject _eventSystem;
         private RectTransform _boardRoot;
         private RectTransform _cellLayer;
@@ -57,6 +58,7 @@ namespace GameFrameY.Game.Modules.Match3
         public void Build()
         {
             _root = new GameObject("Match3Canvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+            _rootRect = _root.GetComponent<RectTransform>();
             var canvas = _root.GetComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             var scaler = _root.GetComponent<CanvasScaler>();
@@ -76,7 +78,7 @@ namespace GameFrameY.Game.Modules.Match3
 
         private void BuildHud()
         {
-            var hud = UiKit.Rect(_root.transform, "HUD",
+            var hud = UiKit.Rect(_rootRect, "HUD",
                 new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, -300), Vector2.zero);
 
             _levelText = UiKit.Text(hud, "Level", "第 1 关", 46, Color.white, TextAnchor.MiddleLeft, FontStyle.Bold);
@@ -100,13 +102,13 @@ namespace GameFrameY.Game.Modules.Match3
             _scoreText.rectTransform.anchoredPosition = new Vector2(0, -232);
             _scoreText.rectTransform.sizeDelta = new Vector2(800, 64);
 
-            _bannerText = UiKit.Text(_root.transform, "Banner", string.Empty, 64,
+            _bannerText = UiKit.Text(_rootRect, "Banner", string.Empty, 64,
                 new Color32(255, 224, 96, 255), TextAnchor.MiddleCenter, FontStyle.Bold);
             _bannerText.rectTransform.anchoredPosition = new Vector2(0, 500);
             _bannerText.rectTransform.sizeDelta = new Vector2(900, 120);
             _bannerText.gameObject.SetActive(false);
 
-            UiKit.Button(_root.transform, "Restart", "重新开始", _assets.ButtonBg,
+            UiKit.Button(_rootRect, "Restart", "重新开始", _assets.ButtonBg,
                 new Vector2(0, -880), new Vector2(360, 110), () => RestartRequested?.Invoke());
         }
 
@@ -120,7 +122,7 @@ namespace GameFrameY.Game.Modules.Match3
 
         private void BuildOverlay()
         {
-            _overlayRoot = UiKit.Rect(_root.transform, "ResultOverlay",
+            _overlayRoot = UiKit.Rect(_rootRect, "ResultOverlay",
                 Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
 
             var dim = _overlayRoot.gameObject.AddComponent<Image>();
