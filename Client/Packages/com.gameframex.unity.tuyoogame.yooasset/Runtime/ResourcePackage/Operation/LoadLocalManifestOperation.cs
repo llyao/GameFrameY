@@ -91,29 +91,38 @@ namespace YooAsset
 
             if (_steps == ESteps.TryLoadCacheManifest)
             {
-                if (_loadCacheManifestOp == null)
+                // EditorSimulateMode/OfflinePlayMode 没有沙盒缓存文件系统，
+                // 不能访问 null 的 _cacheFileSystem，直接读取内置/编辑器文件系统清单。
+                if (_cacheFileSystem == null)
                 {
-                    _loadCacheManifestOp = _cacheFileSystem.LoadLocalPackageManifestAsync(_packageVersion, _timeout);
-                }
-
-                if (_loadCacheManifestOp.IsDone == false)
-                {
-                    return;
-                }
-
-                if (_loadCacheManifestOp.Status == EOperationStatus.Succeed)
-                {
-                    _steps = ESteps.Done;
-                    _impl.ActiveManifest = _loadCacheManifestOp.Manifest;
-                    Debug.Log($"TryLoadCacheManifest Succeed:{_impl.ActiveManifest.PackageName}  {_impl.ActiveManifest.PackageVersion}");
-                    // SavePackageVersion();
-                    Status = EOperationStatus.Succeed;
+                    _steps = ESteps.LoadBuildinManifest;
                 }
                 else
                 {
-                    _steps = ESteps.LoadBuildinManifest;
-                    // Status = EOperationStatus.Failed;
-                    Error = _loadCacheManifestOp.Error;
+                    if (_loadCacheManifestOp == null)
+                    {
+                        _loadCacheManifestOp = _cacheFileSystem.LoadLocalPackageManifestAsync(_packageVersion, _timeout);
+                    }
+
+                    if (_loadCacheManifestOp.IsDone == false)
+                    {
+                        return;
+                    }
+
+                    if (_loadCacheManifestOp.Status == EOperationStatus.Succeed)
+                    {
+                        _steps = ESteps.Done;
+                        _impl.ActiveManifest = _loadCacheManifestOp.Manifest;
+                        Debug.Log($"TryLoadCacheManifest Succeed:{_impl.ActiveManifest.PackageName}  {_impl.ActiveManifest.PackageVersion}");
+                        // SavePackageVersion();
+                        Status = EOperationStatus.Succeed;
+                    }
+                    else
+                    {
+                        _steps = ESteps.LoadBuildinManifest;
+                        // Status = EOperationStatus.Failed;
+                        Error = _loadCacheManifestOp.Error;
+                    }
                 }
             }
 
