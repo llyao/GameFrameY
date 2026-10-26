@@ -191,7 +191,7 @@ namespace GameFrameY.Core.Service
                 if (e.Kind == ServiceChangeKind.Added && e.Descriptor.ServiceType == typeof(TService))
                 {
                     ServiceChanged -= OnChanged;
-                    completion.TryResult(GetService<TService>());
+                    completion.TrySetResult(GetService<TService>());
                 }
             }
 
@@ -207,7 +207,7 @@ namespace GameFrameY.Core.Service
             var cancellationRegistration = cancellationToken.Register(() =>
             {
                 ServiceChanged -= OnChanged;
-                completion.TryCanceled();
+                completion.TrySetCanceled();
             });
 
             try
