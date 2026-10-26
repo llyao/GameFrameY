@@ -47,8 +47,19 @@ namespace GameFrameY.Bridge.Config
                 {
                     var tableFileName = property.Name.ToLowerInvariant();
                     var handle = await _assetService.LoadAssetAsync<TextAsset>(tableFileName);
+                    if (handle == null || handle.Status != EOperationStatus.Succeed || handle.AssetObject is not TextAsset textAsset)
+                    {
+                        var error = handle?.LastError ?? "asset handle is null";
+                        if (handle != null)
+                        {
+                            _assetService.ReleaseHandle(handle);
+                        }
+                        throw new System.Exception(
+                            $"Luban 配置资源加载失败: location={tableFileName}, error={error}。" +
+                            "请确认 YooAsset Bundle Collector 已开启 EnableAddressable 并重新执行模拟构建。");
+                    }
+
                     handles.Add(handle);
-                    var textAsset = (TextAsset)handle.AssetObject;
                     bytesByName[tableFileName] = textAsset.bytes;
                 }
 
