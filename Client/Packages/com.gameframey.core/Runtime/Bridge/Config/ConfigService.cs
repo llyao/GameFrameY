@@ -4,6 +4,7 @@ using Cysharp.Threading.Tasks;
 using GameFrameY.Bridge.Asset;
 using Luban;
 using UnityEngine;
+using YooAsset;
 
 namespace GameFrameY.Bridge.Config
 {

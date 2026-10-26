@@ -1,4 +1,5 @@
 using Cysharp.Threading.Tasks;
+using GameFrameY.Bridge.Config;
 using GameFrameY.Core;
 using GameFrameY.Core.Module;
 using GameFrameY.Core.Service;
