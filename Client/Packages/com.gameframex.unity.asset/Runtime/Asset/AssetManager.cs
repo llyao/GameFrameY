@@ -104,7 +104,7 @@ namespace GameFrameX.Asset.Runtime
             }
 
             var initializationOperationHandler = CreateInitializationOperationHandler(resourcePackage, hostServerURL, fallbackHostServerURL);
-            initializationOperationHandler.Completed += asyncOperationBase =>
+            initializationOperationHandler.Completed += async asyncOperationBase =>
             {
                 if (asyncOperationBase.Error != null || asyncOperationBase.Status != EOperationStatus.Succeed || !asyncOperationBase.IsDone)
                 {
