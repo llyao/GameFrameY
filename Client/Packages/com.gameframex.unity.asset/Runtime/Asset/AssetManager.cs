@@ -53,6 +53,25 @@ namespace GameFrameX.Asset.Runtime
             Log.Info("Asset Init Over");
         }
 
+        private async Task LoadLocalPackageManifestAsync(ResourcePackage resourcePackage)
+        {
+            var versionOperation = resourcePackage.RequestLocalVersionAsync(appendTimeTicks: false, timeout: 60);
+            await versionOperation.Task;
+            if (versionOperation.Status != EOperationStatus.Succeed || string.IsNullOrEmpty(versionOperation.PackageVersion))
+            {
+                throw new Exception(versionOperation.Error ??
+                    $"Can not get local resource package version: {versionOperation.Status}");
+            }
+
+            var manifestOperation = resourcePackage.RequestLocalManifestAsync(versionOperation.PackageVersion, 60);
+            await manifestOperation.Task;
+            if (manifestOperation.Status != EOperationStatus.Succeed)
+            {
+                throw new Exception(manifestOperation.Error ??
+                    $"Can not load resource package manifest: {manifestOperation.Status}");
+            }
+        }
+
         /// <summary>
         /// 初始化操作。
         /// </summary>
@@ -87,13 +106,24 @@ namespace GameFrameX.Asset.Runtime
             var initializationOperationHandler = CreateInitializationOperationHandler(resourcePackage, hostServerURL, fallbackHostServerURL);
             initializationOperationHandler.Completed += asyncOperationBase =>
             {
-                if (asyncOperationBase.Error == null && asyncOperationBase.Status == EOperationStatus.Succeed && asyncOperationBase.IsDone)
+                if (asyncOperationBase.Error != null || asyncOperationBase.Status != EOperationStatus.Succeed || !asyncOperationBase.IsDone)
                 {
+                    taskCompletionSource.TrySetException(new Exception(asyncOperationBase.Error ??
+                        $"Resource package initialization failed: {asyncOperationBase.Status}"));
+                    return;
+                }
+
+                try
+                {
+                    // YooAsset 3.x 的初始化阶段只创建并初始化文件系统，不再主动加载清单。
+                    // 默认加载 API 要求 ActiveManifest 已存在，因此必须在初始化成功后显式完成：
+                    // 本地版本 -> 本地清单。HostPlayMode 后续补丁流仍可另行请求远端版本/清单。
+                    await LoadLocalPackageManifestAsync(resourcePackage);
                     taskCompletionSource.TrySetResult(true);
                 }
-                else
+                catch (Exception e)
                 {
-                    taskCompletionSource.TrySetException(new Exception(asyncOperationBase.Error));
+                    taskCompletionSource.TrySetException(e);
                 }
             };
             return taskCompletionSource.Task;
