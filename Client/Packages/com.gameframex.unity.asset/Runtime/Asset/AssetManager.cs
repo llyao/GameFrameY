@@ -74,11 +74,14 @@ namespace GameFrameX.Asset.Runtime
             if (resourcePackage == null)
             {
                 resourcePackage = YooAssets.CreatePackage(packageName);
-                if (isDefaultPackage)
-                {
-                    // 设置该资源包为默认的资源包，可以使用YooAssets相关加载接口加载该资源包内容。
-                    YooAssets.SetDefaultPackage(resourcePackage);
-                }
+            }
+
+            if (isDefaultPackage)
+            {
+                // 资源包可能已由编辑器模拟模式或其他启动路径提前创建。
+                // 无论是新建还是复用，都必须重新设置 YooAsset 全局默认包，
+                // 否则 YooAssets.LoadAssetAsync 等默认入口会报 Default package is null。
+                YooAssets.SetDefaultPackage(resourcePackage);
             }
 
             var initializationOperationHandler = CreateInitializationOperationHandler(resourcePackage, hostServerURL, fallbackHostServerURL);

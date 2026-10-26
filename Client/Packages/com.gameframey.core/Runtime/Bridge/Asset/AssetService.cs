@@ -10,9 +10,9 @@ namespace GameFrameY.Bridge.Asset
     public interface IAssetService
     {
         /// <summary>
-        /// 初始化默认资源包。
-        /// EditorSimulateMode 下组件自管理（启动时已按 AssetOptions 初始化，跳过避免重复初始化）；
-        /// Offline/HostPlayMode 传入主/备 CDN 地址走 InitPackageAsync。
+        /// 初始化默认资源包。所有 PlayMode 都必须经过 AssetComponent.InitPackageAsync：
+        /// 它负责 EditorSimulate/Offline/Host 的实际初始化；EditorSimulate 也不能跳过，
+        /// 否则资源包不会完成初始化且 YooAsset 默认包不会被设置。
         /// </summary>
         UniTask<bool> InitializeAsync(YooAsset.EPlayMode playMode, string hostUrl = null, string fallbackHostUrl = null);
 
@@ -31,17 +31,11 @@ namespace GameFrameY.Bridge.Asset
 
         public async UniTask<bool> InitializeAsync(YooAsset.EPlayMode playMode, string hostUrl = null, string fallbackHostUrl = null)
         {
-            if (playMode == EPlayMode.EditorSimulateMode)
-            {
-                return true;
-            }
-
-            var ok = await Component.InitPackageAsync(
+            return await Component.InitPackageAsync(
                 AssetComponent.BuildInPackageName,
                 hostUrl ?? string.Empty,
                 fallbackHostUrl ?? string.Empty,
                 true);
-            return ok;
         }
 
         public async UniTask<AssetHandle> LoadAssetAsync<T>(string location) where T : UnityEngine.Object
