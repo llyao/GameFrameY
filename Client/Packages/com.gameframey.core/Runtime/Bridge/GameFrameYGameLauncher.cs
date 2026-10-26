@@ -3,6 +3,7 @@ using System.Threading;
 using Cysharp.Threading.Tasks;
 using GameFrameX.Asset.Runtime;
 using GameFrameX.Procedure.Runtime;
+using GameFrameX.Fsm.Runtime;
 using GameFrameX.Runtime;
 using GameFrameY.Bridge.Procedures;
 using GameFrameY.Core;
@@ -87,12 +88,12 @@ namespace GameFrameY.Bridge
             var enterGame = new ProcedureEnterGame(_modules, _services, _settings, _startupStatus);
 
             var procedures = new GameFrameX.Procedure.Runtime.ProcedureBase[] { launch, patch, loadConfig, enterGame };
+            // ProcedureOptions.UseStartupRunner=true 时，GameFrameX 只注册 IProcedureManager，
+            // 不会替我们调用 Initialize；先显式创建其内部 FSM，再注册入口流程。
+            procedureComponent.Procedure.Initialize(GameFrameworkEntry.GetModule<IFsmManager>(), procedures);
             procedureComponent.ReinitializeProcedures(procedures, launch);
 
-            if (procedureComponent.CurrentProcedure == null)
-            {
-                procedureComponent.Procedure.StartProcedure(launch.GetType());
-            }
+            procedureComponent.Procedure.StartProcedure(launch.GetType());
         }
     }
 }
