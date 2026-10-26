@@ -1,6 +1,7 @@
 using Cysharp.Threading.Tasks;
 using GameFrameX.Runtime;
 using GameFrameX.Scene.Runtime;
+using UnityEngine;
 using UnityEngine.SceneManagement;
 using YooAsset;
 

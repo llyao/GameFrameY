@@ -1,6 +1,7 @@
 using Cysharp.Threading.Tasks;
 using GameFrameY.Core.Module;
 using VContainer;
+using VContainer.Unity;
 
 namespace GameFrameY.Bridge.Scene
 {
