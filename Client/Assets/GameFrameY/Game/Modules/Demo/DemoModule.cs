@@ -28,7 +28,7 @@ namespace GameFrameY.Game.Modules.Demo
                 $"TbGlobal.HotfixEnabled = {global.HotfixEnabled}，PatchUrl = {global.PatchUrl}");
 
             // 2) 动态服务登记（中央注册表 + 变更事件 → 其他模块可 WaitServiceAsync 发现）
-            RegisterService(new DemoGreetingService());
+            RegisterService<IDemoGreetingService>(new DemoGreetingService());
             var greeting = Services.GetService<IDemoGreetingService>().SayHello("GameFrameY");
             GfyLog.Info($"[Demo] {greeting}");
 

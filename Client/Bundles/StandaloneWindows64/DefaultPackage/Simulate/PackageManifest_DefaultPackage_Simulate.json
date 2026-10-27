@@ -1,0 +1,132 @@
+{
+    "FileVersion": "2.0.0",
+    "EnableAddressable": true,
+    "LocationToLower": false,
+    "IncludeAssetGUID": false,
+    "OutputNameStyle": 0,
+    "BuildPipeline": "BuiltinBuildPipeline",
+    "PackageName": "DefaultPackage",
+    "PackageVersion": "Simulate",
+    "AssetList": [
+        {
+            "Address": "tbglobal",
+            "AssetPath": "Assets/Bundles/Config/tbglobal.bytes",
+            "AssetGUID": "",
+            "AssetTags": [],
+            "BundleID": 0
+        },
+        {
+            "Address": "tbitem",
+            "AssetPath": "Assets/Bundles/Config/tbitem.bytes",
+            "AssetGUID": "",
+            "AssetTags": [],
+            "BundleID": 0
+        },
+        {
+            "Address": "tbmatch3const",
+            "AssetPath": "Assets/Bundles/Config/tbmatch3const.bytes",
+            "AssetGUID": "",
+            "AssetTags": [],
+            "BundleID": 0
+        },
+        {
+            "Address": "tbmatch3level",
+            "AssetPath": "Assets/Bundles/Config/tbmatch3level.bytes",
+            "AssetGUID": "",
+            "AssetTags": [],
+            "BundleID": 0
+        },
+        {
+            "Address": "tbserverlist",
+            "AssetPath": "Assets/Bundles/Config/tbserverlist.bytes",
+            "AssetGUID": "",
+            "AssetTags": [],
+            "BundleID": 0
+        },
+        {
+            "Address": "btn_bg",
+            "AssetPath": "Assets/Bundles/Atlases/btn_bg.png",
+            "AssetGUID": "",
+            "AssetTags": [],
+            "BundleID": 1
+        },
+        {
+            "Address": "cell_bg",
+            "AssetPath": "Assets/Bundles/Atlases/cell_bg.png",
+            "AssetGUID": "",
+            "AssetTags": [],
+            "BundleID": 1
+        },
+        {
+            "Address": "gem_blue",
+            "AssetPath": "Assets/Bundles/Atlases/gem_blue.png",
+            "AssetGUID": "",
+            "AssetTags": [],
+            "BundleID": 1
+        },
+        {
+            "Address": "gem_green",
+            "AssetPath": "Assets/Bundles/Atlases/gem_green.png",
+            "AssetGUID": "",
+            "AssetTags": [],
+            "BundleID": 1
+        },
+        {
+            "Address": "gem_orange",
+            "AssetPath": "Assets/Bundles/Atlases/gem_orange.png",
+            "AssetGUID": "",
+            "AssetTags": [],
+            "BundleID": 1
+        },
+        {
+            "Address": "gem_purple",
+            "AssetPath": "Assets/Bundles/Atlases/gem_purple.png",
+            "AssetGUID": "",
+            "AssetTags": [],
+            "BundleID": 1
+        },
+        {
+            "Address": "gem_red",
+            "AssetPath": "Assets/Bundles/Atlases/gem_red.png",
+            "AssetGUID": "",
+            "AssetTags": [],
+            "BundleID": 1
+        },
+        {
+            "Address": "gem_yellow",
+            "AssetPath": "Assets/Bundles/Atlases/gem_yellow.png",
+            "AssetGUID": "",
+            "AssetTags": [],
+            "BundleID": 1
+        },
+        {
+            "Address": "panel_bg",
+            "AssetPath": "Assets/Bundles/Atlases/panel_bg.png",
+            "AssetGUID": "",
+            "AssetTags": [],
+            "BundleID": 1
+        }
+    ],
+    "BundleList": [
+        {
+            "BundleName": "assets_bundles_config.bundle",
+            "UnityCRC": 0,
+            "FileHash": "17c653a08b8444e25be430cd0353d72a",
+            "FileCRC": "00000000",
+            "FileSize": 458,
+            "Encrypted": false,
+            "Tags": [],
+            "DependIDs": []
+        },
+        {
+            "BundleName": "assets_bundles_atlases.bundle",
+            "UnityCRC": 0,
+            "FileHash": "8c0a8f37f5058af6720a12e93595952c",
+            "FileCRC": "00000000",
+            "FileSize": 72961,
+            "Encrypted": false,
+            "Tags": [],
+            "DependIDs": []
+        }
+    ]
+}
